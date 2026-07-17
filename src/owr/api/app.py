@@ -16,6 +16,7 @@ contract for the frontend.
 
 from __future__ import annotations
 
+import os
 import subprocess
 from functools import lru_cache
 
@@ -165,8 +166,10 @@ def create_app(repo: Repository | None = None) -> FastAPI:
                 smooth_weight=inp.smooth_weight,
             )
             run.status = "succeeded"
+            r.save_run(run)
         except ValueError as exc:
             run.status = "failed"
+            r.save_run(run)
             raise HTTPException(422, f"simulation rejected inputs: {exc}") from exc
         return schemas.RunOut(
             id=run.id,
@@ -232,6 +235,7 @@ def create_app(repo: Repository | None = None) -> FastAPI:
         assert scenario is not None
         payload, annotation = _annotation(scenario.inputs, run)
         run.decision_package = {"payload": payload, "annotation": annotation}
+        r.save_run(run)
         return schemas.DecisionPackageOut(run_id=run.id, payload=payload, annotation=annotation)
 
     def _require_completed_run(r: Repository, run_id: int) -> RunRecord:
@@ -245,4 +249,15 @@ def create_app(repo: Repository | None = None) -> FastAPI:
     return app
 
 
-app = create_app()
+def _default_repo() -> Repository:
+    """Pick the store from the environment. psycopg is imported lazily, only when a
+    DSN is present, so the default in-memory API needs no database driver."""
+    dsn = os.getenv("OWR_DATABASE_URL")
+    if dsn:
+        from owr.api.pg_store import PostgresRepository
+
+        return PostgresRepository(dsn)
+    return InMemoryRepository()
+
+
+app = create_app(_default_repo())

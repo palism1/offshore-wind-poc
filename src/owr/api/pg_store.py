@@ -174,29 +174,41 @@ def _hour_ts(day: date, ts_hour: int) -> datetime:
 
 
 def _insert_results(conn: psycopg.Connection, run_id: int, result: SimulationResult) -> None:
-    for d in result.daily:
-        conn.execute(
-            "INSERT INTO app.run_result_daily (run_id, date, budget, priority, "
-            "usable_energy, recharge_sufficiency_ratio) VALUES (%s, %s, %s, %s, %s, %s)",
-            (run_id, d.date, d.budget, d.priority, d.usable_energy, d.recharge_sufficiency_ratio),
+    # Batched: one executemany per table instead of a round-trip per row, so a
+    # multi-week run writes two statements rather than hundreds.
+    daily_rows = [
+        (run_id, d.date, d.budget, d.priority, d.usable_energy, d.recharge_sufficiency_ratio)
+        for d in result.daily
+    ]
+    hourly_rows = [
+        (
+            run_id,
+            _hour_ts(d.date, h.ts_hour),
+            h.soc,
+            h.charge,
+            h.discharge,
+            h.discharge_peak,
+            h.discharge_smooth,
+            h.gross_load,
+            h.net_load,
+            h.capacity_margin,
         )
-        for h in d.hourly:
-            conn.execute(
+        for d in result.daily
+        for h in d.hourly
+    ]
+    with conn.cursor() as cur:
+        if daily_rows:
+            cur.executemany(
+                "INSERT INTO app.run_result_daily (run_id, date, budget, priority, "
+                "usable_energy, recharge_sufficiency_ratio) VALUES (%s, %s, %s, %s, %s, %s)",
+                daily_rows,
+            )
+        if hourly_rows:
+            cur.executemany(
                 "INSERT INTO app.run_result_hourly (run_id, ts, soc, charge, discharge, "
                 "discharge_peak, discharge_smooth, gross_load, net_load, capacity_margin) "
                 "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
-                (
-                    run_id,
-                    _hour_ts(d.date, h.ts_hour),
-                    h.soc,
-                    h.charge,
-                    h.discharge,
-                    h.discharge_peak,
-                    h.discharge_smooth,
-                    h.gross_load,
-                    h.net_load,
-                    h.capacity_margin,
-                ),
+                hourly_rows,
             )
 
 
