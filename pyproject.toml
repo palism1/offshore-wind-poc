@@ -23,6 +23,10 @@ api = [
 dev = [
     "pytest>=8.0",
     "ruff>=0.5",
+    # API layer (Phase 4) and its test client. Kept in dev so the whole suite,
+    # engine + API, runs with a single `uv run pytest` and no live services.
+    "fastapi>=0.110",
+    "httpx>=0.27",
 ]
 
 [build-system]
@@ -43,3 +47,8 @@ target-version = "py312"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B"]
+
+[tool.ruff.lint.per-file-ignores]
+# FastAPI's dependency-injection idiom (`= Depends(...)` in defaults) is the
+# documented pattern; B008 flags it as a false positive here.
+"src/owr/api/*" = ["B008"]
