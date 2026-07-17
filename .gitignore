@@ -14,3 +14,6 @@ data/
 
 # OS
 .DS_Store
+
+# Local tooling (editor worktrees, per-repo settings)
+local-tooling/
