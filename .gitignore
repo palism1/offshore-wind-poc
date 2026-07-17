@@ -14,3 +14,6 @@ data/
 
 # OS
 .DS_Store
+
+# Local tooling (Claude Code worktrees, per-repo settings)
+.claude/
