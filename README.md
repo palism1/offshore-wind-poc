@@ -15,7 +15,7 @@ and forecast modeling belong to the Data & Modeling Lead and are out of scope he
 | 1 | PostgreSQL + TimescaleDB schema | ✅ migration written (`db/migrations/`) |
 | 2 | ETL via `gridstatus` (ISO-NE + EIA) | ⛔ blocked on API credentials |
 | 3 | Simulation engine (pure Python, MPC rolling-window dispatch) | ✅ built + tested |
-| 4 | FastAPI backend | ⏳ depends on Phase 3 |
+| 4 | FastAPI backend (`src/owr/api/`) | ✅ built + tested (in-memory store) |
 | 5 | Thin React/Vite frontend | ⏳ later |
 | 6 | Deployment (docker-compose demo) | ⏳ later |
 
@@ -43,12 +43,20 @@ questions each one maps to.
 
 ```bash
 uv sync --group dev          # create .venv with Python 3.12 + dev tools
-uv run pytest                # run the engine test suite
+uv run pytest                # run the full suite (engine + API)
 uv run ruff check .          # lint
 
-# local database for later phases
+# run the API (Phase 4) — no database or credentials required
+uv run --with uvicorn uvicorn owr.api.app:app --reload
+#   OpenAPI docs / integration contract at http://127.0.0.1:8000/docs
+
+# local database for the later DB-backed store (Phase 2+)
 docker compose up -d db      # Postgres 16 + TimescaleDB on localhost:5432
 ```
+
+The API runs against an in-memory store, so it is fully exercisable now; swapping in
+a PostgreSQL-backed repository (the Phase 1 schema) is an isolated later change behind
+the `owr.api.store.Repository` interface.
 
 ## Layout
 
