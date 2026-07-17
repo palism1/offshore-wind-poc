@@ -1,0 +1,16 @@
+# Local-only files
+RESUME_LOG.md
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+.env
+
+# Data (raw pulls stay local; provenance lives in the DB)
+data/
+*.parquet
+*.csv
+
+# OS
+.DS_Store

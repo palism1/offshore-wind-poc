@@ -1,0 +1,22 @@
+services:
+  db:
+    # TimescaleDB is a PostgreSQL 16 extension; this image ships both.
+    image: timescale/timescaledb:2.17.2-pg16
+    environment:
+      POSTGRES_USER: owr
+      POSTGRES_PASSWORD: owr
+      POSTGRES_DB: owr
+    ports:
+      - "5432:5432"
+    volumes:
+      - owr_pgdata:/var/lib/postgresql/data
+      # migrations run in filename order on first init
+      - ./db/migrations:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U owr -d owr"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  owr_pgdata:
