@@ -45,6 +45,17 @@ class Repository(Protocol):
     def add_run(self, scenario_id: int, code_version: str) -> RunRecord: ...
     def get_run(self, run_id: int) -> RunRecord | None: ...
 
+    def save_run(self, run: RunRecord) -> None:
+        """Persist the current state of a run.
+
+        Routes obtain a RunRecord from ``add_run`` and then mutate it in place
+        (status, result, stress_windows, decision_package). The in-memory store
+        holds the same object so those edits are visible for free; a persistent
+        store returns detached rows, so callers must ``save_run`` after mutating
+        for the changes to survive into a later request. Idempotent by run id.
+        """
+        ...
+
 
 class InMemoryRepository:
     """Non-persistent store for the POC. Thread-safe enough for a single process."""
@@ -81,3 +92,9 @@ class InMemoryRepository:
 
     def get_run(self, run_id: int) -> RunRecord | None:
         return self._runs.get(run_id)
+
+    def save_run(self, run: RunRecord) -> None:
+        # The stored object is already the one the route mutated; re-storing keeps
+        # the contract explicit and matches the persistent store's semantics.
+        with self._lock:
+            self._runs[run.id] = run
