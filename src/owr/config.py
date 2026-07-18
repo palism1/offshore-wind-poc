@@ -34,18 +34,20 @@ class Config:
         with the Architecture doc's efficiency term (FACT_CHECK inconsistency #2).
 
     default_soc_floor_frac / default_strategic_reserve_frac
-        Reserve definition (FACT_CHECK inconsistency #3, still a BLOCKED team
-        decision). We model two separate fractions of total capacity; their sum is
-        the minimum state of charge the engine will never discharge below. Defaults
-        (0.33 + 0.0) reproduce the doc's "constant reserve of 33% total capacity".
+        Reserve definition (FACT_CHECK inconsistency #3). Team decision 2026-07-17:
+        the protected reserve is a 20% floor plus a 10% reserve of total capacity,
+        leaving 70% for regular operations. We model the two as separate fractions;
+        their sum (0.30) is the minimum state of charge the engine never discharges
+        below. Still OPEN: when the 10% reserve and 20% floor may each be drawn down
+        (until decided, both are treated as one protected floor).
     """
 
     priority_demand_weight: float = 0.7
     priority_wind_weight: float = 0.3
     energy_budget_fraction: float = 0.80
     default_efficiency: float = 1.0
-    default_soc_floor_frac: float = 0.33
-    default_strategic_reserve_frac: float = 0.0
+    default_soc_floor_frac: float = 0.20
+    default_strategic_reserve_frac: float = 0.10
 
     def __post_init__(self) -> None:
         if abs((self.priority_demand_weight + self.priority_wind_weight) - 1.0) > 1e-9:
