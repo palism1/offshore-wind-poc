@@ -6,6 +6,11 @@ readme = "README.md"
 requires-python = ">=3.12"
 dependencies = []
 
+[project.scripts]
+# Phase 2 ETL CLI: `etl extract | transform | validate`. Only `extract` is
+# implemented; transform/validate are scaffolded (see src/owr/etl/cli.py).
+etl = "owr.etl.cli:main"
+
 [project.optional-dependencies]
 # ETL / DB / API dependencies land in later phases (Phase 2+). The Phase 3
 # simulation engine is intentionally pure-Python with no third-party runtime deps
