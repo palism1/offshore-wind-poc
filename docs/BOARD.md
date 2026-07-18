@@ -1,6 +1,6 @@
 # Job Board
 
-synced 2026-07-18T17:17:47.776Z
+synced 2026-07-18T17:53:45.294Z
 
 ## In Progress
 
@@ -9,7 +9,6 @@ synced 2026-07-18T17:17:47.776Z
 - [Wind forecast accuracy vs real-time observations — Alexander](https://discord.com/channels/1527018571912446132/1527871527528431697) [Modeling] — Owner: _unassigned_
 - [Winter and summer load profile analysis — Alexander](https://discord.com/channels/1527018571912446132/1527871300888953012) [Data] — Owner: _unassigned_
 - [Build ETL transform, daily aggregation and denominators — Mikko](https://discord.com/channels/1527018571912446132/1527871203434299665) [Validation, Software] — Owner: kKomi
-- [Merge the reserve-split branch to main - Mikko](https://discord.com/channels/1527018571912446132/1527869913895669934) [Software] — Owner: _unassigned_
 
 ## Open
 
@@ -23,4 +22,4 @@ synced 2026-07-18T17:17:47.776Z
 
 ## Done
 
-_none_
+- [Merge the reserve-split branch to main - Mikko](https://discord.com/channels/1527018571912446132/1527869913895669934) [Software] — Owner: _unassigned_
