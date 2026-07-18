@@ -25,14 +25,16 @@ class StorageAsset:
         Round-trip efficiency used in the state equation (default 1.0).
     soc_floor_frac, strategic_reserve_frac
         Fractions of total capacity that together define the minimum SoC the engine
-        never discharges below (the "reserve"). See Config for the open decision.
+        never discharges below (the "reserve"). Team decision 2026-07-17: 20% floor
+        + 10% reserve = 30% protected, 70% for regular operations. See Config for the
+        still-open question of when each may be drawn down.
     """
 
     total_mwh: float
     power_mw: float
     efficiency: float = 1.0
-    soc_floor_frac: float = 0.33
-    strategic_reserve_frac: float = 0.0
+    soc_floor_frac: float = 0.20
+    strategic_reserve_frac: float = 0.10
 
     def __post_init__(self) -> None:
         if self.total_mwh <= 0:

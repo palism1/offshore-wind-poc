@@ -30,7 +30,13 @@ def _stress_day(i: int) -> DayProfile:
 
 
 def test_rolling_window_shaves_peak_and_respects_reserve():
-    asset = StorageAsset(total_mwh=20000, power_mw=2000, efficiency=1.0, soc_floor_frac=0.33)
+    asset = StorageAsset(
+        total_mwh=20000,
+        power_mw=2000,
+        efficiency=1.0,
+        soc_floor_frac=0.33,
+        strategic_reserve_frac=0.0,
+    )
     window = [_stress_day(i) for i in range(3)]
 
     result = simulate(
@@ -52,7 +58,13 @@ def test_rolling_window_shaves_peak_and_respects_reserve():
 
 
 def test_initial_soc_charges_from_wind_before_event():
-    asset = StorageAsset(total_mwh=1000, power_mw=100, efficiency=1.0, soc_floor_frac=0.33)
+    asset = StorageAsset(
+        total_mwh=1000,
+        power_mw=100,
+        efficiency=1.0,
+        soc_floor_frac=0.33,
+        strategic_reserve_frac=0.0,
+    )
     lead = [
         DayProfile(
             date=date(2026, 1, 9),

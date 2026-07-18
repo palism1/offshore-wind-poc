@@ -28,8 +28,10 @@ def test_negative_flows_rejected():
 
 
 def test_usable_energy_respects_reserve_floor():
-    # 33% of 1000 MWh = 330 MWh protected reserve
-    asset = StorageAsset(total_mwh=1000, power_mw=100, soc_floor_frac=0.33)
+    # 33% of 1000 MWh = 330 MWh protected reserve (floor only, no strategic reserve)
+    asset = StorageAsset(
+        total_mwh=1000, power_mw=100, soc_floor_frac=0.33, strategic_reserve_frac=0.0
+    )
     assert asset.min_soc_mwh == pytest.approx(330.0)
     assert usable_energy(500.0, asset) == pytest.approx(170.0)
     assert usable_energy(330.0, asset) == 0.0
@@ -37,7 +39,9 @@ def test_usable_energy_respects_reserve_floor():
 
 
 def test_clamp_discharge_by_floor_and_power():
-    asset = StorageAsset(total_mwh=1000, power_mw=50, soc_floor_frac=0.33)
+    asset = StorageAsset(
+        total_mwh=1000, power_mw=50, soc_floor_frac=0.33, strategic_reserve_frac=0.0
+    )
     # want 200 but only 170 usable and power caps at 50
     assert clamp_discharge(500.0, 200.0, asset) == 50.0
     # power not binding: usable (170) is the limit... but power (50) is smaller, so 50
