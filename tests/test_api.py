@@ -21,6 +21,7 @@ def _scenario_body() -> dict:
         "storage_start_mwh": 20000,
         "power_output_mw": 2000,
         "soc_floor_frac": 0.33,
+        "strategic_reserve_frac": 0.0,
         "season": "winter",
         "date_start": "2026-01-10",
         "date_end": "2026-01-12",
