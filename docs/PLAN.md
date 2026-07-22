@@ -11,7 +11,7 @@ Scope: the Software & Infrastructure Lead role (PostgreSQL, ETL, backend, fronte
 
 ## Phase 0 — Foundation (repo + access)
 1. Create GitHub repo (per Scaling doc MVP checklist), Python 3.12, uv or poetry, ruff, pytest, pre-commit.
-2. Obtain ISO-NE Web Services credentials (webservices.iso-ne.com) and an EIA API key.
+2. Obtain ISO-NE Web Services credentials (webservices.iso-ne.com) and an EIA API key. Every ingest source, its auth, and what it feeds is registered in `DATA_SOURCES.md`.
 3. Confirm the wind generation/forecast dataset choice with the Data & Modeling Lead (this is the coupling point between the two roles).
 4. Docker compose file with PostgreSQL 16 + TimescaleDB extension for local dev.
 
@@ -29,7 +29,7 @@ Tables (all with provenance columns: source, retrieved_at, source_query, dataset
 Seasonal denominators (561,878 / 434,214 MWh) become rows in a `features.constants` table with a derivation query recorded, not literals in code.
 
 ## Phase 2 — ETL pipeline
-1. Extract via `gridstatus` (ISO-NE load/LMP, EIA) into `raw.*` immutably; idempotent upserts keyed on (source, ts).
+1. Extract via `gridstatus` (ISO-NE load/LMP, EIA) into `raw.*` immutably; idempotent upserts keyed on (source, ts). Exact source URLs/formats in `DATA_SOURCES.md`; the two `candidate` sources (load + wind) stay provisional until the team decisions land.
 2. Transform: hourly to daily aggregation, season tagging, demand percentile computation; data validation gates (gap detection, unit checks, DST handling) with a validation report the Data & Modeling Lead signs off on.
 3. CLI entry points (`etl extract`, `etl transform`, `etl validate`) so pipeline steps are runnable and testable independently; nightly refresh is a stretch goal, historical backfill is the requirement.
 
@@ -65,6 +65,15 @@ Every formula gets a unit test quoting the document line it implements; constant
 3. One storage label for external comms (subsea pumped hydro vs battery); engine handles either.
 4. Define the empty Overview sections (Constraints, Metrics, Required Inputs, Success Criteria); proposal: adopt Phase 3 metrics list as the Metrics draft.
 5. Which wind dataset (historical offshore proxy vs synthetic forecast) — Data & Modeling Lead owns, but schema needs the answer by Phase 1.
+
+### Executive-summary review (2026-07-22, adversarial pass)
+Blocks finalizing the new executive summary. First two need a team decision; the rest are fixes once those land.
+
+6. **Problem statement — load-forecast uncertainty vs. winter fuel adequacy?** The summary claims "load-forecasting uncertainty," but the ISO-NE page we cite (21-day forecast) is a generator fuel-supply adequacy report (oil/LNG stock, replenishment lead time) and says nothing about load-forecast accuracy. Either cite a source that documents load-forecast uncertainty, or reframe the problem around winter fuel/reserve adequacy — where the ISO-NE link supports us cleanly. Owner: _unassigned_.
+7. **Decision the tool supports — operational vs. investment?** Summary closes on judging whether wind reserves are "a practical investment," but our metrics are operational (capacity margin, severity reduction vs. baseline, cost vs. gas). No capex/LCOE/payback in the plan. Scope the claim to operational value, or make investment feasibility an explicit future phase. Owner: _unassigned_.
+8. Drop/rewrite "protect strategic LNG reserves" — the engine models no fuel reserves; only gas-adjacent output is a cost benchmark. Honest version is closer to "reduce reliance on gas-fired generation during stress events," and only if a metric backs it.
+9. "Full-scale prototype of StEnSea" is inaccurate — Fraunhofer has built only a 1:10 unit; a 1:3 offshore prototype is planned. Say we model the full-scale (1:1) *design*, not a built prototype.
+10. "Wind energy peaks in winter" needs a cited source before it ships (plausible for NE offshore, currently asserted bare).
 
 ## Explicit non-goals (per Scaling Goal B/C)
 Spatial modeling, transmission/distribution losses, flow directions, market interchange, regulatory compliance logic, digital twin fidelity, more than 2 to 4 data sources.
