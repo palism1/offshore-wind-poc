@@ -94,7 +94,7 @@ app = create_app(_default_repo())
 Docker daemon was DOWN when this work paused. Steps:
 ```bash
 open -a Docker                       # start Docker Desktop, wait for daemon
-cd ~/Desktop/offshore-wind-poc/worktrees/postgres-repo   # or wherever the branch is
+cd ~/Desktop/offshore-wind-poc
 docker compose down -v               # drop any stale volume so initdb re-runs
 docker compose up -d db              # runs 001 then 002 in filename order on fresh volume
 # wait for healthcheck: docker compose ps  (or pg_isready)

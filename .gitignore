@@ -15,5 +15,6 @@ data/
 # OS
 .DS_Store
 
-# Local tooling (editor worktrees, per-repo settings)
+# Local tooling — kept out of the project entirely
 local-tooling/
+.agents/

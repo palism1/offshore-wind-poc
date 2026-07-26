@@ -123,18 +123,15 @@ before treating results as final:
 4. **Phase 5 frontend**: HELD until the API contract is exercised and the open team
    decisions land, to avoid rework.
 
-## Session / workflow gotchas
+## Repo conventions
 
-1. The project became a **git repo** during this work (`git init`, then pushed to a
-   private GitHub remote). Because of that, editor background isolation now triggers:
-   the Write/Edit tools refuse to edit the shared checkout directly. Build code changes in
-   a **git worktree** (`EnterWorktree`), then `ExitWorktree` (keep) and fast forward merge
-   the branch into `main` in the Desktop checkout.
-2. There is a a local editor settings file with `worktree.bgIsolation: none` intended to
-   disable that guard, but it did **not** take effect mid session. Do not rely on it.
-3. the local tooling directory (worktrees, per repo settings) is gitignored.
-4. `RESUME_LOG.md` is **LOCAL ONLY and gitignored**; never commit it. It holds resume
+1. `RESUME_LOG.md` is **LOCAL ONLY and gitignored**; never commit it. It holds resume
    flavored progress entries. Update it as work lands.
-5. Fresh sessions must invoke the personal skill **`source-verification`**
-   before producing slides, schemas, plans, or code from the spec docs. The verification
-   for the current claims is already recorded in `docs/FACT_CHECK_REPORT.md`.
+2. Verify before publishing. Every regulatory citation, grid statistic, formula and
+   design constant taken from the spec docs needs a verdict — Verified, Contradicted or
+   Unverifiable — against a primary source before it reaches a slide, schema, plan or
+   code. Primary sources only: ISO-NE Web Services, EIA API v2, ferc.gov, BOEM,
+   DOE/NREL/PNNL. The verification for the current claims is recorded in
+   `docs/FACT_CHECK_REPORT.md`.
+3. Surface disagreements between documents as a team decision; do not silently pick a
+   side. See `docs/FINDINGS_REVIEW_2026-07-24.md` for the current open list.
