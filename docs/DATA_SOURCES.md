@@ -18,7 +18,7 @@ decision, see Open decisions below) · `reference` (informs design, not ingested
 | ISO-NE Web Services API v1.1 | https://webservices.iso-ne.com/docs/v1.1/ | REST/JSON | hourly | ISO-NE credentials | Hourly system load + LMP; primary API path (also wraps via `gridstatus`) | confirmed |
 | ISO-NE hourly real-time system demand | https://www.iso-ne.com/isoexpress/web/reports/load-and-demand/-/tree/dmnd-rt-hourly-sys | CSV | hourly | public download | Load profiles, stress-window finder, daily-load denominators | candidate — see [1] |
 | ISO-NE hourly wholesale load cost | https://www.iso-ne.com/isoexpress/web/reports/load-and-demand/-/tree/whlsecost-hourly-system | CSV | hourly | public download | Cost-vs-gas / residual-load-cost metric | confirmed |
-| ISO-NE hourly wholesale load cost, NEMA/Boston | https://www.iso-ne.com/isoexpress/web/reports/load-and-demand/-/tree/whlsecost-hourly-nemassbost | CSV | hourly | public download | The 17,395-hour NEMA load/LMP series already in use | confirmed — see [3] |
+| ISO-NE hourly wholesale load cost, NEMA/Boston | https://www.iso-ne.com/isoexpress/web/reports/load-and-demand/-/tree/whlsecost-hourly-system (`locationId=4008`) | CSV | hourly | public download | The 17,395-hour NEMA load/LMP series already in use | confirmed — see [3] |
 | EIA API v2 (opendata) | https://www.eia.gov/opendata/browser/ | REST/JSON | varies | EIA API key | Generation + capacity context (also wraps via `gridstatus`) | confirmed |
 | EIA hourly generation by fuel type (RTO) | https://www.eia.gov/opendata/browser/electricity/rto/fuel-type-data | REST/JSON | hourly | EIA API key | Generation mix; wind-generation input to storage charge | candidate — see [2] |
 
@@ -73,12 +73,19 @@ and no account login at any point.
 
 | Field | Value |
 |---|---|
-| Portal | ISO-NE ISO Express, hourly wholesale load cost, NEMA/Boston |
+| Portal | ISO-NE ISO Express, hourly wholesale load cost |
+| Report tree | https://www.iso-ne.com/isoexpress/web/reports/load-and-demand/-/tree/whlsecost-hourly-system |
+| CSV endpoint | `/transform/csv/whlsecost/hourly?month=YYYYMM&locationId=4008` |
 | File pattern | `whlsecost_hourly_4008_YYYYMM.csv` |
-| Location ID | 4008 (NEMA/Boston load zone) |
+| Location ID | 4008 (NEMA/Boston load zone); 4000 is New England system-wide |
 | Months | January, February, March, June, July |
 | Years | 2022–2026 |
 | File count | 24 monthly CSVs |
+
+One report tree serves the whole system and every zone; `locationId` selects which. Use the
+tree URL above rather than the per-zone page — the zonal pages are views onto the same
+report, and the ETL wants the parameterized endpoint anyway. Hourly history on this report
+runs about seven years back, which comfortably covers 2022–2026.
 
 **This unblocks Phase 2 ETL.** The board recorded Phase 2 as blocked on ISO-NE Web Services
 credentials. For this dataset those credentials are not required, so the extract can be
