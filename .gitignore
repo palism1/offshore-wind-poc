@@ -11,6 +11,9 @@ __pycache__/
 data/
 *.parquet
 *.csv
+# Committed example inputs for the simulator CLI (the blanket *.csv rule above is
+# for local raw pulls).
+!examples/*.csv
 
 # OS
 .DS_Store

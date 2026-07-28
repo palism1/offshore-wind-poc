@@ -6,11 +6,10 @@ Read this first when resuming in a fresh session.
 ## Where things stand
 
 Phases 0–4 and CI are complete and tested. The engine, the FastAPI layer, the Postgres
-repository, and the ETL extract skeleton all work; nothing in the code is half-finished.
-The last session did no engine work — it rewrote the git history to remove authoring
-metadata, then produced three analysis documents assessing the project against the team's
-2026-07-27 storage pivot. The next unit of work is the **simulator CLI**, which does not
-exist yet and is the critical path to a demoable v1.0.
+repository, the ETL extract skeleton, and the simulator CLI all work; nothing in the code
+is half-finished. This session built the **simulator CLI**: a terminal entry point
+(`simulate`, also runnable as `python -m owr`) that reads a day-profile CSV and drives the
+engine loop end to end. It is the demoable v1.0 the team decided on 2026-07-23.
 
 ## What this project is
 
@@ -24,14 +23,16 @@ ISO-NE 21-day page we cite is a generator fuel-supply report and supports the fo
 
 ## What works, verified
 
-Run this session at commit `7c18531`:
+Verified at the start of this session, commit `7c18531`: `uv run pytest` gave 66 passed, 3
+skipped; `uv run ruff check .` passed; working tree clean; 0 commits unpushed.
+
+Verified after this session's simulator CLI work, uncommitted on top of `7c18531`:
 
 | Check | Command | Result |
 |---|---|---|
-| Test suite | `uv run pytest` | **66 passed, 3 skipped** (skips are Docker-gated Postgres tests) |
+| Test suite | `uv run pytest` | **151 passed, 3 skipped** (skips are Docker-gated Postgres tests) |
 | Lint | `uv run ruff check .` | **All checks passed** |
-| Working tree | `git status --short` | clean |
-| Remote sync | `git log origin/main..HEAD` | 0 unpushed |
+| Working tree | `git status --short` | uncommitted (see "What is in flight") |
 
 | Phase | Scope | State |
 |---|---|---|
@@ -39,8 +40,9 @@ Run this session at commit `7c18531`:
 | 1 | PostgreSQL 16 + TimescaleDB schema, 3 migrations | Written, **never run against a live DB** |
 | 2 | ETL extract via `gridstatus` → `raw.*`, provenance, CLI | Skeleton done, **fixture-tested only** |
 | 3 | Simulation engine (MPC rolling-window dispatch) | Done, tested |
+| 3.5 | Simulator CLI (`simulate` / `python -m owr`), reads a day-profile CSV and drives the engine loop end to end | Done, tested — MVP v1.0 |
 | 4 | FastAPI backend, in-memory + Postgres repositories | Done, tested (in-memory path) |
-| 5 | Frontend | Deferred post-v1.0 by team decision; CLI is MVP v1.0 |
+| 5 | Frontend | Deferred post-v1.0 by team decision |
 | 6 | CI (GitHub Actions: ruff + pytest) | Done, running |
 
 ## History rewrite — read before touching git
@@ -60,34 +62,36 @@ Every commit SHA changed. Consequences:
 
 ## What is in flight
 
-**Nothing in code.** The working tree is clean and everything is pushed.
+**Simulator CLI built, uncommitted.** The working tree carries the new `src/owr/cli.py`,
+`src/owr/scenario_input.py`, `src/owr/version.py`, `src/owr/__main__.py`,
+`examples/make_synthetic_winter_stress.py` + its generated CSV, the `Config` additions in
+`src/owr/config.py`, the `code_version()` move out of `src/owr/api/app.py`, and their tests.
+Verified: 151 passed, 3 skipped; ruff clean. Nothing is committed yet — review and commit
+is the next action.
 
 **Not yet posted:** a Discord project update drafted at
 `2026-07-28_project_update.md` (repo root, gitignored) plus a short message body for the
 channel. Mikko posts it; it corrects a teammate's number so it should go out under his name.
 
-**Not yet started:** the simulator CLI. No branch, no files.
-
 ## Next step
 
-Build the **simulator CLI** — a terminal entry point that runs a scenario end to end over
-the existing engine and prints results. This is MVP v1.0 per the team's 2026-07-23 decision
-(CLI first, UI at v1.1+).
+Review and commit the simulator CLI (see "What is in flight"), then pick up the remaining
+checklist below.
 
 Notes for whoever picks it up:
-- `src/owr/etl/cli.py` exists and is the **ETL** CLI. The simulator CLI is separate.
-- The engine loop it must drive is `stress_finder → initial_soc → [budget → dispatch →
-  soc_engine] → metrics`, orchestrated by `src/owr/simulator.py`.
-- The FastAPI routes in `src/owr/api/app.py` already sequence this correctly; read them
-  before designing the CLI so the two stay consistent.
-- This is code work, so it goes through the plan gate first per the SWE pipeline.
+- `src/owr/etl/cli.py` is the **ETL** CLI. The simulator CLI (`src/owr/cli.py`) is separate.
+- `docs/PLAN_SIMULATOR_CLI.md` is the plan this was built against, including the CSV format,
+  the argument surface, and the four open team questions the CLI surfaces as flags with
+  labeled defaults rather than resolving.
+- The CSV day-profile format the CLI reads is provisional — no ETL export matches it yet
+  (see `src/owr/scenario_input.py` module docstring).
 
 Remaining checklist from `docs/PROJECT_STATE_2026-07-28.md`, in order:
 1. ~~Data-provenance question~~ — raised in the Discord draft, awaiting a reply.
 2. ~~Correct the sphere count~~ — done, commit `08ef67a`.
 3. Tier 3 decisions — raised with recommendations, blocked on the team.
 4. ~~Efficiency-vs-transmission-distance calculation~~ — done, commit `1e4a241`.
-5. **Simulator CLI** — next.
+5. ~~Simulator CLI~~ — built this session, uncommitted.
 6. Metric formulas into `metrics.py` — blocked on the formulas and thresholds.
 
 ## Open questions and decisions not yet made
@@ -137,8 +141,10 @@ Remaining checklist from `docs/PROJECT_STATE_2026-07-28.md`, in order:
 ```bash
 cd ~/Desktop/offshore-wind-poc
 uv sync --group dev                                    # .venv, Python 3.12 + dev tools
-uv run pytest                                          # 66 passed, 3 skipped
+uv run pytest                                          # 151 passed, 3 skipped
 uv run ruff check .                                    # All checks passed
+uv run simulate --input examples/synthetic_winter_stress.csv \
+  --storage-mwh 20000 --power-mw 2000                  # simulator CLI end to end
 uv run --with uvicorn uvicorn owr.api.app:app --reload # API; OpenAPI docs at /docs
 docker compose up -d db                                # Postgres 16 + TimescaleDB
 uv run python -m owr.etl --help                        # ETL CLI (extract | transform | validate)
@@ -155,13 +161,14 @@ Postgres-backed store at runtime.
 | Repo | `~/Desktop/offshore-wind-poc/` |
 | GitHub | https://github.com/palism1/offshore-wind-poc (origin/main) |
 | Phased plan | `docs/PLAN.md` |
+| Simulator CLI implementation plan | `docs/PLAN_SIMULATOR_CLI.md` |
 | Project state, ordered by stability | `docs/PROJECT_STATE_2026-07-28.md` |
 | Storage siting trade-off calculation | `docs/STORAGE_SITING_TRADEOFF.md` |
 | Findings review vs. the analysis reports | `docs/FINDINGS_REVIEW_2026-07-24.md` |
 | Primary-source verification | `docs/FACT_CHECK_REPORT.md` |
 | Data source registry | `docs/DATA_SOURCES.md` |
 | Job board snapshot | `docs/BOARD.md` |
-| Engine / API / ETL | `src/owr/`, `src/owr/api/`, `src/owr/etl/` |
+| Engine / API / ETL / simulator CLI | `src/owr/`, `src/owr/api/`, `src/owr/etl/`, `src/owr/cli.py` |
 | Schema | `db/migrations/` |
 | Resume log (LOCAL ONLY, gitignored) | `RESUME_LOG.md` |
 

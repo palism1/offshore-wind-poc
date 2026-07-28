@@ -10,6 +10,8 @@ dependencies = []
 # Phase 2 ETL CLI: `etl extract | transform | validate`. Only `extract` is
 # implemented; transform/validate are scaffolded (see src/owr/etl/cli.py).
 etl = "owr.etl.cli:main"
+# Simulator CLI: runs a scenario end to end over the engine (see src/owr/cli.py).
+simulate = "owr.cli:main"
 
 [project.optional-dependencies]
 # ETL / DB / API dependencies land in later phases (Phase 2+). The Phase 3

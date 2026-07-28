@@ -17,8 +17,6 @@ contract for the frontend.
 from __future__ import annotations
 
 import os
-import subprocess
-from functools import lru_cache
 
 from fastapi import Depends, FastAPI, HTTPException
 
@@ -29,20 +27,7 @@ from owr.config import DEFAULT_CONFIG
 from owr.models import DayProfile, StorageAsset
 from owr.simulator import simulate
 from owr.stress_finder import find_stress_windows
-
-
-@lru_cache(maxsize=1)
-def code_version() -> str:
-    """Short git sha of the engine, tagged onto every run for provenance."""
-    try:
-        sha = subprocess.check_output(
-            ["git", "rev-parse", "--short", "HEAD"],
-            stderr=subprocess.DEVNULL,
-            text=True,
-        ).strip()
-        return sha or "unknown"
-    except Exception:
-        return "unknown"
+from owr.version import code_version
 
 
 def _asset(inp: schemas.ScenarioCreate) -> StorageAsset:

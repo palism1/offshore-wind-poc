@@ -41,7 +41,7 @@ Modules mapping one-to-one to the Architecture doc outline:
 4. `soc_engine`: soc(t+1) = soc(t) + charge·eff − discharge/eff with eff parameter (default 1.0), soc_floor, strategic_reserve; usable_energy accounting.
 5. `budget`: recharge sufficiency ratio, Priority(d) = 0.7·DemandPercentile + 0.3·WindForecast, Budget(d) allocation, the 80% energy budget rule.
 6. `metrics`: capacity margin (gross vs net load with storage), residual load cost vs gas price, severity reduction vs direct-to-grid baseline.
-7. `simulator`: the rolling-window loop orchestrating 1 through 6 day by day until the stress window ends.
+7. `simulator`: the rolling-window loop orchestrating 1 through 6 day by day until the stress window ends. Has a terminal entry point: `owr.cli` (console script `simulate`, also runnable as `python -m owr`), which reads a day-profile CSV and drives this loop end to end. See `docs/PLAN_SIMULATOR_CLI.md`.
 Every formula gets a unit test quoting the document line it implements; constants (0.7/0.3, 80%, 33%) are config values labeled as team design choices.
 **Blocked on team decisions:** the two blank Step 5/6 sections and the canonical reserve definition (see open questions).
 
