@@ -23,16 +23,16 @@ ISO-NE 21-day page we cite is a generator fuel-supply report and supports the fo
 
 ## What works, verified
 
-Verified at the start of this session, commit `7c18531`: `uv run pytest` gave 66 passed, 3
-skipped; `uv run ruff check .` passed; working tree clean; 0 commits unpushed.
-
-Verified after this session's simulator CLI work, uncommitted on top of `7c18531`:
+This session opened at commit `7c18531` with 66 passed, 3 skipped. The simulator CLI added
+86 tests. Verified at `17bdb9c`, the current tip of `main`:
 
 | Check | Command | Result |
 |---|---|---|
-| Test suite | `uv run pytest` | **151 passed, 3 skipped** (skips are Docker-gated Postgres tests) |
+| Test suite | `uv run pytest` | **152 passed, 3 skipped** (skips are Docker-gated Postgres tests) |
 | Lint | `uv run ruff check .` | **All checks passed** |
-| Working tree | `git status --short` | uncommitted (see "What is in flight") |
+| Working tree | `git status --short` | clean |
+| Remote sync | `git log origin/main..HEAD` | 0 unpushed |
+| Branches | `git branch -a` | `main` only, local and remote |
 
 | Phase | Scope | State |
 |---|---|---|
@@ -62,21 +62,29 @@ Every commit SHA changed. Consequences:
 
 ## What is in flight
 
-**Simulator CLI built, uncommitted.** The working tree carries the new `src/owr/cli.py`,
-`src/owr/scenario_input.py`, `src/owr/version.py`, `src/owr/__main__.py`,
-`examples/make_synthetic_winter_stress.py` + its generated CSV, the `Config` additions in
-`src/owr/config.py`, the `code_version()` move out of `src/owr/api/app.py`, and their tests.
-Verified: 151 passed, 3 skipped; ruff clean. Nothing is committed yet — review and commit
-is the next action.
+**Nothing.** The working tree is clean, everything is on `origin/main`, and `main` is the
+only branch — local and remote. Verified this session: **152 passed, 3 skipped**, ruff clean.
 
-**Not yet posted:** a Discord project update drafted at
-`2026-07-28_project_update.md` (repo root, gitignored) plus a short message body for the
-channel. Mikko posts it; it corrects a teammate's number so it should go out under his name.
+The simulator CLI landed in three commits: `160eebb` (the CLI), `ad14298` (NEMA series
+provenance), `17bdb9c` (canonical ISO Express URL). The Discord project update was posted.
 
 ## Next step
 
-Review and commit the simulator CLI (see "What is in flight"), then pick up the remaining
-checklist below.
+**Phase 2 ETL, now unblocked.** Point the extract at the public ISO Express CSV endpoint —
+`/transform/csv/whlsecost/hourly?month=YYYYMM&locationId=4008` — and run it for real. The
+credential wait that blocked this phase does not apply to this dataset; see open question 8
+below and `docs/DATA_SOURCES.md` [3]. This is the only substantial work not waiting on
+someone else.
+
+Two things to settle while doing it, both recorded in `DATA_SOURCES.md` [3]: the file count
+is 24 where five months across five years would be 25, and the 17,395-hour total agrees with
+24 files only to within daylight-saving adjustments. Neither is alarming; both should be
+resolved before the series anchors a published number.
+
+After that, the CLI's CSV reader and the ETL output need to meet. The reader's day-profile
+format is provisional and nothing in the schema matches it yet, so either the ETL grows a
+CSV export in that shape or the reader learns the ETL's shape. That is a design call, not a
+mechanical one.
 
 Notes for whoever picks it up:
 - `src/owr/etl/cli.py` is the **ETL** CLI. The simulator CLI (`src/owr/cli.py`) is separate.
@@ -87,12 +95,13 @@ Notes for whoever picks it up:
   (see `src/owr/scenario_input.py` module docstring).
 
 Remaining checklist from `docs/PROJECT_STATE_2026-07-28.md`, in order:
-1. ~~Data-provenance question~~ — raised in the Discord draft, awaiting a reply.
+1. ~~Data-provenance question~~ — answered by Alexander 2026-07-28; see open question 8.
 2. ~~Correct the sphere count~~ — done, commit `08ef67a`.
 3. Tier 3 decisions — raised with recommendations, blocked on the team.
 4. ~~Efficiency-vs-transmission-distance calculation~~ — done, commit `1e4a241`.
-5. ~~Simulator CLI~~ — built this session, uncommitted.
+5. ~~Simulator CLI~~ — done, commit `160eebb`.
 6. Metric formulas into `metrics.py` — blocked on the formulas and thresholds.
+7. **Phase 2 ETL against the public endpoint** — unblocked 2026-07-28, next.
 
 ## Open questions and decisions not yet made
 
@@ -144,7 +153,7 @@ Remaining checklist from `docs/PROJECT_STATE_2026-07-28.md`, in order:
 ```bash
 cd ~/Desktop/offshore-wind-poc
 uv sync --group dev                                    # .venv, Python 3.12 + dev tools
-uv run pytest                                          # 151 passed, 3 skipped
+uv run pytest                                          # 152 passed, 3 skipped
 uv run ruff check .                                    # All checks passed
 uv run simulate --input examples/synthetic_winter_stress.csv \
   --storage-mwh 20000 --power-mw 2000                  # simulator CLI end to end
