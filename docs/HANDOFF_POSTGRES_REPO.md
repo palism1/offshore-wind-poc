@@ -119,7 +119,7 @@ Confirm both modes: with DB (PG tests run and pass) and without (they skip, suit
   #3 ETL skeleton (blocked on ISO-NE/EIA creds), #4 frontend (held).
 - `RESUME_LOG.md` is LOCAL-ONLY / gitignored, in the main checkout only. Add a dated
   entry there when this lands.
-- The source-verification procedure is NOT triggered by this task: it is pure
+- Source verification is NOT triggered by this task: it is pure
   persistence plumbing over the already-tested engine, introducing no new grid claims,
   statistics, or formulas.
 

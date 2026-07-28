@@ -1,6 +1,6 @@
 # Fact-Check Report — 2026-07-16
 
-Produced by the source-verification procedure against the three source documents
+Verification pass against the three source documents
 (Overview, Scaling, Software Architecture Model, converted from Downloads on 2026-07-16).
 
 ## Verified

@@ -10,7 +10,8 @@ against three new analysis artifacts:
 | `NE_Stage1_Stage2_Findings.pdf` | Report B |
 | `daily_stress_events.csv` | CSV |
 
-Verdicts follow the source-verification procedure. Inconsistencies are
+Verdicts follow the project verification procedure: every external claim needs a
+primary-source check before it reaches a deliverable. Inconsistencies are
 surfaced for a team decision, not silently reconciled.
 
 ---
