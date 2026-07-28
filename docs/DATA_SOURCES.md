@@ -18,9 +18,11 @@ decision, see Open decisions below) · `reference` (informs design, not ingested
 | ISO-NE Web Services API v1.1 | https://webservices.iso-ne.com/docs/v1.1/ | REST/JSON | hourly | ISO-NE credentials | Hourly system load + LMP; primary API path (also wraps via `gridstatus`) | confirmed |
 | ISO-NE hourly real-time system demand | https://www.iso-ne.com/isoexpress/web/reports/load-and-demand/-/tree/dmnd-rt-hourly-sys | CSV | hourly | public download | Load profiles, stress-window finder, daily-load denominators | candidate — see [1] |
 | ISO-NE hourly wholesale load cost | https://www.iso-ne.com/isoexpress/web/reports/load-and-demand/-/tree/whlsecost-hourly-system | CSV | hourly | public download | Cost-vs-gas / residual-load-cost metric | confirmed |
-| ISO-NE hourly wholesale load cost, NEMA/Boston | https://www.iso-ne.com/isoexpress/web/reports/load-and-demand/-/tree/whlsecost-hourly-system (`locationId=4008`) | CSV | hourly | public download | The 17,395-hour NEMA load/LMP series already in use | confirmed — see [3] |
+| ISO-NE hourly wholesale load cost, **New England system-wide** | https://www.iso-ne.com/isoexpress/web/reports/load-and-demand/-/tree/whlsecost-hourly-system (`locationId=4000`) | CSV | hourly | public download | **Canonical** load/LMP series — Alexander's 2026-07-28 spec, see [3] | confirmed — see [3] |
+| ISO-NE hourly wholesale load cost, NEMA/Boston | https://www.iso-ne.com/isoexpress/web/reports/load-and-demand/-/tree/whlsecost-hourly-system (`locationId=4008`) | CSV | hourly | public download | The 17,395-hour NEMA series; now the eastern-MA sub-region view, not the study basis | superseded by 4000 — see [3] |
+| ISO-NE Daily Generation by Fuel Type | https://www.iso-ne.com/isoexpress/web/reports/operations/-/tree/daily-gen-fuel-type | CSV | **daily** | public download | Wind-generation input to storage charge — Alexander's 2026-07-28 choice | candidate — see [2] |
 | EIA API v2 (opendata) | https://www.eia.gov/opendata/browser/ | REST/JSON | varies | EIA API key | Generation + capacity context (also wraps via `gridstatus`) | confirmed |
-| EIA hourly generation by fuel type (RTO) | https://www.eia.gov/opendata/browser/electricity/rto/fuel-type-data | REST/JSON | hourly | EIA API key | Generation mix; wind-generation input to storage charge | candidate — see [2] |
+| EIA hourly generation by fuel type (RTO) | https://www.eia.gov/opendata/browser/electricity/rto/fuel-type-data | REST/JSON | hourly | EIA API key | Hourly wind cross-check / reconciliation against the ISO-NE daily report | candidate — see [2] |
 
 ## Reference sources (inform design, not ingested)
 
@@ -61,8 +63,14 @@ These two `candidate` rows are blocked on team calls already tracked in
 1. **Canonical load dataset** — ISO-NE real-time system demand CSV vs. the Web Services
    API load feed. Both cover all-NE hourly demand; pick one as the schema's load source.
    (PLAN.md open question 5 / storage of denominators.)
-2. **Canonical wind dataset** — EIA hourly generation-by-fuel-type (system-wide wind) vs.
-   a dedicated offshore-wind proxy/forecast. Determines the charge-side input to storage.
+2. **Canonical wind dataset** — Alexander chose **ISO-NE Daily Generation by Fuel Type**
+   (2026-07-28) for the wind input, not EIA. Two things this leaves open:
+   - **Granularity.** That report is **daily**; the load/LMP series is **hourly**. The
+     charging model (charge into the highest-wind-speed *hours*) needs hourly wind, which a
+     daily total cannot resolve. Either add an hourly wind source (EIA RTO hourly, or ISO-NE's
+     interval Dispatch Fuel Mix report) or downscale, and record the choice.
+   - **Reconciliation.** Alexander flagged he does not know whether the ISO-NE figure matches
+     EIA. Cross-check the two before either anchors a result.
    (PLAN.md open question 5.)
 
 Until each is decided, treat the `candidate` source as provisional and do not hard-code it
@@ -104,12 +112,27 @@ Two things to check before the series anchors a result:
   reported 17,395 to within the hours that daylight-saving transitions add and remove.
   The count is consistent; it is not by itself proof that no rows are missing.
 
-**Scope update, 2026-07-28.** Mitchell set study scope to all of New England (ISO-NE
-system-wide), not NEMA/Boston. The 17,395-hour series above is `locationId=4008` (NEMA). A
-system-wide pull uses **`locationId=4000`** on the *same* report tree and endpoint — no new
-source, no credentials — and the ETL should be parameterized on `locationId` so both scopes
-run from one code path. The NEMA series stays useful as the eastern-Massachusetts sub-region
-where the storage actually lands. See `HANDOFF.md` → "Clarifications received, 2026-07-28".
+**Scope update, 2026-07-28 — confirmed by both Mitchell and Alexander.** Study scope is all
+of New England (ISO-NE system-wide), not NEMA/Boston. The 17,395-hour series above is
+`locationId=4008` (NEMA). Alexander's 2026-07-28 spec for the system-wide pull, verbatim:
+
+| Field | Value |
+|---|---|
+| Portal | ISO-NE ISO Express, hourly wholesale load cost |
+| Report tree | https://www.iso-ne.com/isoexpress/web/reports/load-and-demand/-/tree/whlsecost-hourly-system |
+| CSV endpoint | `/transform/csv/whlsecost/hourly?month=YYYYMM&locationId=4000` |
+| File pattern | `whlsecost_hourly_4000_YYYYMM.csv` |
+| Location ID | **4000 (New England system-wide)**; 4008 is NEMA/Boston zone only |
+| Months | January, February, March, June, July |
+| Years | 2022–2026 |
+| Wind generation | ISO-NE Daily Generation by Fuel Type, https://www.iso-ne.com/isoexpress/web/reports/operations/-/tree/daily-gen-fuel-type ("i do not know if its same with the EIA data") |
+
+Same report tree and endpoint as the NEMA pull — no new source, no credentials — only the
+`locationId` changes, so the ETL should be parameterized on it and run both scopes from one
+code path. The 4008 series stays useful as the eastern-Massachusetts sub-region where the
+storage actually lands. Wind moves to the ISO-NE daily report; see open decision 2 for the
+daily-vs-hourly and EIA-reconciliation flags. See `HANDOFF.md` → "Clarifications received,
+2026-07-28".
 
 ## [4] Theoretical shallow-water StEnSea variant
 

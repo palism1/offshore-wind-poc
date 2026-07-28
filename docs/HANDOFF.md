@@ -208,9 +208,23 @@ carry dated pointers back to this block rather than being rewritten.
   is temporal arbitrage of *gas availability* — burn LNG when unconstrained, discharge stored
   wind when it is not. This gives the **Fuel-Fired Generation Offset** metric its meaning:
   add fuel-fired MWh pre-event, offset (more expensive, constrained) fuel-fired MWh during
-  the event; the net is what the asset is worth. What still needs Alexander is the *prices* —
-  pre-event LNG cost and event-time value — since the engine carries none (keeps 7 downstream
-  of 3). The modeling default is no longer open; the price inputs are.
+  the event; the net is what the asset is worth. This is Mitchell's feedback on the report,
+  not an open question routed to Alexander — the modeling default is settled. What is still
+  needed is the *prices* (pre-event LNG cost and event-time value), and those come straight
+  from the load-cost data now being pulled: the `whlsecost-hourly-system` report Alexander is
+  sourcing carries the wholesale/LMP series. So this is a data-wiring task into `dispatch.py`
+  / `metrics.py`, not a decision anyone still owes (keeps 7 downstream of 3 as data, not as a
+  pending call).
+
+- **Alexander's actual 2026-07-28 input is the data-source spec, not the charging model.**
+  He confirmed the New England scope independently ("We are using the entire NE and not
+  NEMA/Boston") and gave the exact pull: `whlsecost` at `locationId=4000`, file pattern
+  `whlsecost_hourly_4000_YYYYMM.csv`, months Jan/Feb/Mar/Jun/Jul, years 2022–2026 — the
+  system-wide re-pull already anticipated, now specified. For wind he used **ISO-NE Daily
+  Generation by Fuel Type** (`daily-gen-fuel-type`), not EIA, and flagged he does not know if
+  it matches EIA. Two flags recorded in `DATA_SOURCES.md` open decision 2: that report is
+  **daily** while charging needs hourly wind, and the ISO-NE-vs-EIA values are unreconciled.
+  Full spec table in `DATA_SOURCES.md` [3].
 
 **Assumptions that may be wrong:**
 
