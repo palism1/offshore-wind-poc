@@ -1,137 +1,180 @@
 # HANDOFF — Offshore Wind Reserve Scenario Tool
+Updated: 2026-07-28
 
-Read this first when resuming the project in a fresh session. Last updated: 2026-07-17.
+Read this first when resuming in a fresh session.
+
+## Where things stand
+
+Phases 0–4 and CI are complete and tested. The engine, the FastAPI layer, the Postgres
+repository, and the ETL extract skeleton all work; nothing in the code is half-finished.
+The last session did no engine work — it rewrote the git history to remove authoring
+metadata, then produced three analysis documents assessing the project against the team's
+2026-07-27 storage pivot. The next unit of work is the **simulator CLI**, which does not
+exist yet and is the critical path to a demoable v1.0.
 
 ## What this project is
 
-A proof of concept scenario testing tool for the **Software & Infrastructure Lead**
-role. Question under test: can long duration **seafloor wind energy reserves** (subsea
-pumped hydro, StEnSea like) reduce the severity of multi day grid stress events on
-ISO-NE (Boston / New England) versus sending offshore wind straight to the grid. Data
-science and forecast modeling belong to a separate Data & Modeling Lead and are out of
-scope for this repo.
+A proof-of-concept scenario tool for the **Software & Infrastructure Lead** role. Question
+under test: can long-duration storage charged from offshore wind reduce the severity of
+multi-day winter grid stress events on NEMA/Boston, versus sending wind straight to the
+grid. Data science and forecast modeling belong to a separate Data & Modeling Lead.
+
+Framing as of 2026-07-27 is **winter fuel adequacy**, not load-forecast uncertainty. The
+ISO-NE 21-day page we cite is a generator fuel-supply report and supports the former only.
+
+## What works, verified
+
+Run this session at commit `7c18531`:
+
+| Check | Command | Result |
+|---|---|---|
+| Test suite | `uv run pytest` | **66 passed, 3 skipped** (skips are Docker-gated Postgres tests) |
+| Lint | `uv run ruff check .` | **All checks passed** |
+| Working tree | `git status --short` | clean |
+| Remote sync | `git log origin/main..HEAD` | 0 unpushed |
+
+| Phase | Scope | State |
+|---|---|---|
+| 0 | Repo scaffold (uv, Python 3.12, ruff, pytest, docker-compose) | Done |
+| 1 | PostgreSQL 16 + TimescaleDB schema, 3 migrations | Written, **never run against a live DB** |
+| 2 | ETL extract via `gridstatus` → `raw.*`, provenance, CLI | Skeleton done, **fixture-tested only** |
+| 3 | Simulation engine (MPC rolling-window dispatch) | Done, tested |
+| 4 | FastAPI backend, in-memory + Postgres repositories | Done, tested (in-memory path) |
+| 5 | Frontend | Deferred post-v1.0 by team decision; CLI is MVP v1.0 |
+| 6 | CI (GitHub Actions: ruff + pytest) | Done, running |
+
+## History rewrite — read before touching git
+
+On 2026-07-28 the entire history was rewritten with `git filter-repo` and force-pushed.
+Every commit SHA changed. Consequences:
+
+- **Any clone or fork made before 2026-07-28 has diverged.** Re-clone; do not merge.
+- The three merged PRs (#1, #2, #3) still read as merged but their commit links are dead.
+- The three merged branches (`reserve-default-split`, `worktree-ci-workflow`,
+  `worktree-postgres-repo`) were deleted from the remote. Only `main` exists.
+- A pre-rewrite backup lives at `offshore-wind-poc-BACKUP-20260728-112028.bundle` in the
+  repo root. It is gitignored and **must never be committed** — it contains the history
+  that was removed. The rewrite is verified on the remote, so the bundle is safe to delete.
+- `.gitignore` no longer lists local tooling directories. Those moved to
+  `~/.config/git/ignore` (`core.excludesFile`).
+
+## What is in flight
+
+**Nothing in code.** The working tree is clean and everything is pushed.
+
+**Not yet posted:** a Discord project update drafted at
+`2026-07-28_project_update.md` (repo root, gitignored) plus a short message body for the
+channel. Mikko posts it; it corrects a teammate's number so it should go out under his name.
+
+**Not yet started:** the simulator CLI. No branch, no files.
+
+## Next step
+
+Build the **simulator CLI** — a terminal entry point that runs a scenario end to end over
+the existing engine and prints results. This is MVP v1.0 per the team's 2026-07-23 decision
+(CLI first, UI at v1.1+).
+
+Notes for whoever picks it up:
+- `src/owr/etl/cli.py` exists and is the **ETL** CLI. The simulator CLI is separate.
+- The engine loop it must drive is `stress_finder → initial_soc → [budget → dispatch →
+  soc_engine] → metrics`, orchestrated by `src/owr/simulator.py`.
+- The FastAPI routes in `src/owr/api/app.py` already sequence this correctly; read them
+  before designing the CLI so the two stay consistent.
+- This is code work, so it goes through the plan gate first per the SWE pipeline.
+
+Remaining checklist from `docs/PROJECT_STATE_2026-07-28.md`, in order:
+1. ~~Data-provenance question~~ — raised in the Discord draft, awaiting a reply.
+2. ~~Correct the sphere count~~ — done, commit `08ef67a`.
+3. Tier 3 decisions — raised with recommendations, blocked on the team.
+4. ~~Efficiency-vs-transmission-distance calculation~~ — done, commit `1e4a241`.
+5. **Simulator CLI** — next.
+6. Metric formulas into `metrics.py` — blocked on the formulas and thresholds.
+
+## Open questions and decisions not yet made
+
+**Blocked on the team, each blocks code:**
+
+1. **Round-trip efficiency default.** `config.py` ships 1.0; Report B computed everything at
+   0.85. At 1.0 the engine understates required charging energy by 17.6%. Recommend 0.85.
+   The storage pivot upgrades this — efficiency is now the axis the candidate technologies
+   differ on (StEnSea 0.80, LAES 0.50–0.70, thermal ~0.35), so it should become a
+   first-class scenario input.
+2. **One canonical stress-event definition.** Three artifacts use three different thresholds
+   and merge rules on the same January 2025 activity. Recommend Report B's rule (12+ hours
+   above threshold = stress day, 2+ consecutive = event). Blocks `stress_finder`.
+3. **Is charged wind priced at opportunity cost?** Report A found zero hours of negative net
+   load, so no free wind exists. Recommend yes. Largest correctness gap in the model.
+4. **Reserve usage rules** — when the 10% strategic reserve and the 20% floor may each be
+   drawn. Open since 2026-07-18. Engine currently treats the sum as one protected floor.
+5. **Cycle count per year.** Identified 2026-07-28 as the variable the storage siting
+   trade-off turns on, and completely unspecified. At ~10 cycles/yr capex dominates; at
+   ~200 the efficiency case returns. Should become a scenario input.
+6. **Does "Scenario Robustness Score" replace "Decision Confidence"?** Unconfirmed.
+7. **Who owns the capex/payback formula?** Offered to the channel 2026-07-23, unclaimed.
+   Thresholds assigned to Alexander, still undefined.
+
+**Blocked on an answer from Alexander:**
+
+8. **Where did the 17,395 hours of NEMA load/wind/LMP data come from?** The board says Phase 2
+   ETL is blocked on ISO-NE Web Services credentials, but that data exists. If it came through
+   public `gridstatus` endpoints, Phase 2 unblocks immediately. Open since 2026-07-24 and the
+   cheapest unblock available.
+
+**Assumptions that may be wrong:**
+
+- The `STORAGE_SITING_TRADEOFF.md` calculation takes LAES round-trip efficiency of 0.50–0.70
+  from Mitchell's Discord post. Not checked against a primary source. Do that before it
+  drives a decision.
+- Seasonal denominators (561,878 MWh summer / 434,214 MWh winter) remain underivable from
+  available artifacts. Do not hard-code; derive during ETL and store in `features.constants`
+  with the query.
+- The ~200 m depth claimed off Provincetown does not match published bathymetry. Needs a
+  depth-vs-distance curve from the USGS Massachusetts Bay model before that site anchors
+  anything.
+
+## How to run it
+
+```bash
+cd ~/Desktop/offshore-wind-poc
+uv sync --group dev                                    # .venv, Python 3.12 + dev tools
+uv run pytest                                          # 66 passed, 3 skipped
+uv run ruff check .                                    # All checks passed
+uv run --with uvicorn uvicorn owr.api.app:app --reload # API; OpenAPI docs at /docs
+docker compose up -d db                                # Postgres 16 + TimescaleDB
+uv run python -m owr.etl --help                        # ETL CLI (extract | transform | validate)
+```
+
+The API and engine run with **no database and no credentials** — the API uses an in-memory
+store behind `owr.api.store.Repository`. Setting `OWR_DATABASE_URL` switches it to the
+Postgres-backed store at runtime.
 
 ## Where everything is
 
 | Thing | Location |
-|-------|----------|
-| Repo (working checkout) | `~/Desktop/offshore-wind-poc/` |
-| GitHub (private) | https://github.com/palism1/offshore-wind-poc (origin/main) |
+|---|---|
+| Repo | `~/Desktop/offshore-wind-poc/` |
+| GitHub | https://github.com/palism1/offshore-wind-poc (origin/main) |
 | Phased plan | `docs/PLAN.md` |
-| Fact check report (primary source verification) | `docs/FACT_CHECK_REPORT.md` |
-| Slide deck assets + mermaid diagram | `docs/DIAGRAM_REFERENCES.md` |
+| Project state, ordered by stability | `docs/PROJECT_STATE_2026-07-28.md` |
+| Storage siting trade-off calculation | `docs/STORAGE_SITING_TRADEOFF.md` |
+| Findings review vs. the analysis reports | `docs/FINDINGS_REVIEW_2026-07-24.md` |
+| Primary-source verification | `docs/FACT_CHECK_REPORT.md` |
+| Data source registry | `docs/DATA_SOURCES.md` |
+| Job board snapshot | `docs/BOARD.md` |
+| Engine / API / ETL | `src/owr/`, `src/owr/api/`, `src/owr/etl/` |
+| Schema | `db/migrations/` |
 | Resume log (LOCAL ONLY, gitignored) | `RESUME_LOG.md` |
-| Engine code | `src/owr/` |
-| API code | `src/owr/api/` |
-| DB schema | `db/migrations/001_init.sql` |
-| Tests | `tests/` |
-
-## Current status (phase by phase)
-
-| Phase | Scope | State |
-|-------|-------|-------|
-| 0 | Repo scaffold (uv, Python 3.12, ruff, pytest, docker-compose) | DONE |
-| 1 | PostgreSQL + TimescaleDB schema | DONE (migration written, not yet run against a live DB) |
-| 2 | ETL via `gridstatus` (ISO-NE + EIA) | BLOCKED on API credentials |
-| 3 | Simulation engine (pure Python, MPC rolling window dispatch) | DONE, tested |
-| 4 | FastAPI backend | DONE, tested (in-memory store) |
-| 5 | React/Vite frontend | HELD on purpose (see Open decisions) |
-| 6 | Deployment + CI | NOT STARTED |
-
-Test suite: **35 tests, all green. ruff clean.** Run `uv run pytest` and
-`uv run ruff check .` to confirm.
-
-## How to run
-
-```bash
-cd ~/Desktop/offshore-wind-poc
-uv sync --group dev                                   # .venv with Python 3.12 + dev tools
-uv run pytest                                         # full suite (engine + API)
-uv run ruff check .                                   # lint
-uv run --with uvicorn uvicorn owr.api.app:app --reload # serve the API; docs at /docs
-docker compose up -d db                               # Postgres 16 + TimescaleDB (later phases)
-```
-
-The API and engine run with **no database and no credentials**. The API talks to an
-in-memory store behind `owr.api.store.Repository`; a Postgres backed store using the
-Phase 1 schema drops in later without touching any route.
-
-## Architecture at a glance
-
-Engine (`src/owr/`), pure Python, no I/O in the core, so it is fully testable offline.
-The rolling window (model predictive control) dispatch loop is:
-
-```
-stress_finder -> initial_soc -> [ per stress day: budget -> dispatch -> soc_engine ] -> metrics
-```
-
-One module per responsibility: `stress_finder`, `initial_soc`, `budget`, `dispatch`,
-`soc_engine`, `metrics`, `simulator`. Each formula has a unit test that quotes the
-Architecture doc line it implements.
-
-API (`src/owr/api/`): `schemas.py` (Pydantic wire contract), `store.py` (Repository
-protocol + in-memory impl), `app.py` (FastAPI factory + routes). Endpoints: create /
-fetch scenario, launch run (synchronous for the POC), stress windows, results, and a
-provenance tagged decision package annotation. Every run is stamped with the engine git
-sha.
-
-## Key design decisions already made
-
-1. **Storage is a generic long duration asset** (power, energy, efficiency, floors), so
-   the pumped hydro versus battery naming question is a copy decision, not a code fork.
-2. **Efficiency is a parameter defaulting to 1.0**, which reconciles the Overview's
-   "100% efficient" assumption with the Architecture doc's efficiency term.
-3. **Every open design constant is a labeled config value** in `src/owr/config.py`
-   (reserve floor 33%, priority weights 0.7/0.3, 80% budget rule), never a magic number.
-   Each docstring names the open team question it maps to.
-4. **Provenance is a product feature**: schema rows carry (source, retrieved_at,
-   source_query, dataset_version); seasonal denominators live in `features.constants`
-   with a derivation query, not as literals; runs are tagged with the code git sha.
-
-## What is blocked and on what
-
-1. **Phase 2 ETL** needs **ISO-NE Web Services credentials** (webservices.iso-ne.com)
-   and an **EIA API key** (api.eia.gov). The skeleton can be built without them, but it
-   stays untested against live data until the keys exist.
-2. The **seasonal denominators** (561,878 MWh summer / 434,214 MWh winter) are
-   unverifiable until derived from ISO-NE load history during ETL. Do not hard code them;
-   derive and store in `features.constants` with the query.
-
-## Open team decisions (still unresolved, from FACT_CHECK_REPORT.md)
-
-These gate specific formulas. The code runs today on documented defaults, but confirm
-before treating results as final:
-
-1. Canonical reserve definition: is 33% the `soc_floor`, or `soc_floor` plus
-   `strategic_reserve`? (Engine supports both as separate fractions.)
-2. Architecture doc Steps 5 and 6 are blank / duplicated; the budget allocation detail
-   is the labeled interpretation in `src/owr/budget.py`, not verbatim spec.
-3. Which wind dataset (historical offshore proxy vs synthetic forecast). Data & Modeling
-   Lead owns this; the schema needs the answer for Phase 2.
-4. One storage label for external comms (subsea pumped hydro vs battery). Engine is
-   agnostic; this is a UI/copy choice.
-
-## Recommended next steps (in priority order)
-
-1. **CI**: add a GitHub Actions workflow running `ruff check` and `uv run pytest` on push
-   and PR. Cheap, and the repo has no CI yet. (Plan Phase 6.)
-2. **Phase 2 ETL skeleton**: CLI entry points (`etl extract | transform | validate`),
-   transform + validation gate structure, `gridstatus` wiring. Testable structure now,
-   live pulls once credentials arrive.
-3. **Postgres backed Repository**: implement the `owr.api.store.Repository` protocol
-   against the Phase 1 schema so the API persists.
-4. **Phase 5 frontend**: HELD until the API contract is exercised and the open team
-   decisions land, to avoid rework.
 
 ## Repo conventions
 
-1. `RESUME_LOG.md` is **LOCAL ONLY and gitignored**; never commit it. It holds resume
-   flavored progress entries. Update it as work lands.
-2. Verify before publishing. Every regulatory citation, grid statistic, formula and
-   design constant taken from the spec docs needs a verdict — Verified, Contradicted or
-   Unverifiable — against a primary source before it reaches a slide, schema, plan or
-   code. Primary sources only: ISO-NE Web Services, EIA API v2, ferc.gov, BOEM,
-   DOE/NREL/PNNL. The verification for the current claims is recorded in
-   `docs/FACT_CHECK_REPORT.md`.
-3. Surface disagreements between documents as a team decision; do not silently pick a
-   side. See `docs/FINDINGS_REVIEW_2026-07-24.md` for the current open list.
+1. `RESUME_LOG.md` is local-only and gitignored. Never commit it.
+2. **No authoring metadata reaches the remote.** No co-author trailers, generator footers,
+   tool names, or assistant-tooling paths in commits, PR bodies, issues, or tracked files.
+   The 2026-07-28 rewrite existed to remove exactly that.
+3. Verify before publishing. Every regulatory citation, grid statistic, formula and design
+   constant needs a verdict — Verified, Contradicted, or Unverifiable — against a primary
+   source before it reaches a slide, schema, plan, or code. Primary sources only: ISO-NE Web
+   Services, EIA API v2, ferc.gov, BOEM, DOE/NREL/PNNL, Fraunhofer.
+4. Surface disagreements between documents as a team decision; do not silently pick a side.
+5. Design constants are labeled config values in `src/owr/config.py`, never magic numbers.
+   Each docstring names the open team question it maps to.
