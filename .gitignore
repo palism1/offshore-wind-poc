@@ -14,3 +14,7 @@ data/
 
 # OS
 .DS_Store
+
+# Local backups and outgoing drafts (never commit — the bundle holds pre-rewrite history)
+*.bundle
+2026-*_project_update.md
