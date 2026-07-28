@@ -55,9 +55,18 @@ Evidence:
 | 5% target, per stressed hour | 838 MWh | **175 MWh** |
 | Total reserve, 7-day event | 40,000–60,000 MWh | **~8,400–12,600 MWh** |
 
-This reframes Keith's question directly. Against a **1 GWh StEnSea unit**, the
-corrected NEMA figure is roughly **8–13 spheres**, not 40–60. That is the difference
-between "implausible" and "a procurement conversation."
+> **Correction, 2026-07-28.** This paragraph originally read "roughly **8–13 spheres**,"
+> treating Keith's "1 GWh StEnSea product" as a single unit. That is wrong by a factor of
+> about 50. Fraunhofer's published full-scale unit is **20 MWh** per 30 m sphere at
+> 600–800 m depth, 5–7 MW, round-trip efficiency 0.80; a 1 GWh product is a *park* of
+> ~50 spheres. Source: https://www.iee.fraunhofer.de/en/topics/stensea.html
+
+This reframes Keith's question directly. At **20 MWh per full-scale sphere**, the corrected
+NEMA reserve of 8,400–12,600 MWh is **420–630 spheres**. Against the uncorrected ISO-NE
+figure it would have been 2,000–3,000.
+
+That is a real engineering program rather than a procurement conversation, and it is the
+number the storage-siting pivot should be argued against.
 
 **Needs a decision:** is the study scope NEMA/Boston (4008) or ISO-NE system-wide?
 The repo, both report subtitles, and the CSV all say NEMA. Recommend ratifying NEMA
@@ -223,10 +232,10 @@ lights on in a storm" does not lead a knowledgeable reader to "therefore build a
 simulator."
 
 The bridge is **I-1 corrected to NEMA scale**: a 7-day NEMA event needs ~8,400–12,600
-MWh of reserve, which is ~8–13 StEnSea spheres, and Event 17 (Jan 25–31 2026) priced
-that energy at **$443/MWh**. That is a specific, checkable claim that motivates
-simulation — the sizing and the policy both sit in a range wide enough that you cannot
-eyeball the answer.
+MWh of reserve — 420–630 full-scale StEnSea spheres at 20 MWh each — and Event 17
+(Jan 25–31 2026) priced that energy at **$443/MWh**. That is a specific, checkable claim
+that motivates simulation — the sizing and the policy both sit in a range wide enough
+that you cannot eyeball the answer.
 
 His two suggested second questions are good and both point at **market and incentive
 misalignment**, which the current engine cannot address. Recommend answering them in
