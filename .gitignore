@@ -14,7 +14,3 @@ data/
 
 # OS
 .DS_Store
-
-# Local tooling — kept out of the project entirely
-local-tooling/
-.agents/
