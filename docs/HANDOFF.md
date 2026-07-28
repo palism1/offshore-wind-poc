@@ -117,12 +117,15 @@ Remaining checklist from `docs/PROJECT_STATE_2026-07-28.md`, in order:
 7. **Who owns the capex/payback formula?** Offered to the channel 2026-07-23, unclaimed.
    Thresholds assigned to Alexander, still undefined.
 
-**Blocked on an answer from Alexander:**
+**Answered, 2026-07-28:**
 
-8. **Where did the 17,395 hours of NEMA load/wind/LMP data come from?** The board says Phase 2
-   ETL is blocked on ISO-NE Web Services credentials, but that data exists. If it came through
-   public `gridstatus` endpoints, Phase 2 unblocks immediately. Open since 2026-07-24 and the
-   cheapest unblock available.
+8. ~~**Where did the 17,395 hours of NEMA load/wind/LMP data come from?**~~ Alexander answered:
+   the public ISO Express portal, no credentials and no API key. Files are
+   `whlsecost_hourly_4008_YYYYMM.csv` (location 4008 = NEMA/Boston), 24 monthly CSVs covering
+   January/February/March/June/July across 2022–2026. Full record in `docs/DATA_SOURCES.md` [3].
+   **Phase 2 ETL is unblocked** — point the extract at the public CSV endpoint. Two loose ends
+   noted there: the file count is 24 where five months across five years would be 25, and the
+   hour count agrees with 24 files only to within daylight-saving adjustments.
 
 **Assumptions that may be wrong:**
 

@@ -18,6 +18,7 @@ decision, see Open decisions below) · `reference` (informs design, not ingested
 | ISO-NE Web Services API v1.1 | https://webservices.iso-ne.com/docs/v1.1/ | REST/JSON | hourly | ISO-NE credentials | Hourly system load + LMP; primary API path (also wraps via `gridstatus`) | confirmed |
 | ISO-NE hourly real-time system demand | https://www.iso-ne.com/isoexpress/web/reports/load-and-demand/-/tree/dmnd-rt-hourly-sys | CSV | hourly | public download | Load profiles, stress-window finder, daily-load denominators | candidate — see [1] |
 | ISO-NE hourly wholesale load cost | https://www.iso-ne.com/isoexpress/web/reports/load-and-demand/-/tree/whlsecost-hourly-system | CSV | hourly | public download | Cost-vs-gas / residual-load-cost metric | confirmed |
+| ISO-NE hourly wholesale load cost, NEMA/Boston | https://www.iso-ne.com/isoexpress/web/reports/load-and-demand/-/tree/whlsecost-hourly-nemassbost | CSV | hourly | public download | The 17,395-hour NEMA load/LMP series already in use | confirmed — see [3] |
 | EIA API v2 (opendata) | https://www.eia.gov/opendata/browser/ | REST/JSON | varies | EIA API key | Generation + capacity context (also wraps via `gridstatus`) | confirmed |
 | EIA hourly generation by fuel type (RTO) | https://www.eia.gov/opendata/browser/electricity/rto/fuel-type-data | REST/JSON | hourly | EIA API key | Generation mix; wind-generation input to storage charge | candidate — see [2] |
 
@@ -42,8 +43,11 @@ sources live in `FACT_CHECK_REPORT.md`. This file is for ingest and data provena
 ## Auth needed before Phase 2 ETL
 
 - **ISO-NE Web Services credentials** — https://webservices.iso-ne.com (also noted in `HANDOFF.md`).
+  Not required for the NEMA/Boston series now in use; see [3]. Still wanted for the
+  programmatic API path.
 - **EIA API key** — https://api.eia.gov.
 - The ISO Express CSV reports download without auth; API paths give the same data programmatically.
+  Phase 2 ETL can start against the public CSV endpoint without waiting on either credential.
 
 ## Open decisions affecting sources
 
@@ -59,3 +63,32 @@ These two `candidate` rows are blocked on team calls already tracked in
 
 Until each is decided, treat the `candidate` source as provisional and do not hard-code it
 as the canonical input.
+
+## [3] Provenance of the 17,395-hour NEMA series
+
+Answered by Alexander on 2026-07-28, closing a question open since 2026-07-24.
+
+The series came entirely from the public ISO Express portal. No credentials, no API key,
+and no account login at any point.
+
+| Field | Value |
+|---|---|
+| Portal | ISO-NE ISO Express, hourly wholesale load cost, NEMA/Boston |
+| File pattern | `whlsecost_hourly_4008_YYYYMM.csv` |
+| Location ID | 4008 (NEMA/Boston load zone) |
+| Months | January, February, March, June, July |
+| Years | 2022–2026 |
+| File count | 24 monthly CSVs |
+
+**This unblocks Phase 2 ETL.** The board recorded Phase 2 as blocked on ISO-NE Web Services
+credentials. For this dataset those credentials are not required, so the extract can be
+pointed at the public CSV endpoint and run now.
+
+Two things to check before the series anchors a result:
+
+- Five months across five years is 25 files, and the count reported is 24. Identify the
+  missing month before treating year coverage as uniform. July 2026 is the likely gap,
+  being the current month.
+- 24 monthly files over these months is roughly 17,400 hours, which agrees with the
+  reported 17,395 to within the hours that daylight-saving transitions add and remove.
+  The count is consistent; it is not by itself proof that no rows are missing.
