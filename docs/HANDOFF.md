@@ -189,12 +189,28 @@ carry dated pointers back to this block rather than being rewritten.
   distance curve** for a specific candidate point, because even Wilkinson's ~275 m is well
   short of StEnSea's native 600–800 m — which is exactly why the shallow variant is needed.
   Bathymetry map sources added to `DATA_SOURCES.md` so the team shares one reference.
-- **Opportunity-cost charging (decision 3 / I-4) is routed to Alexander.** Mitchell's framing:
-  New England only has *excess* wind when transmission cannot move it, and this project does
-  not model excess — it deliberately diverts wind into storage ahead of stress events
-  regardless. So whether "zero hours of negative net load" implies a charging opportunity
-  cost is a question for whoever owns the load/price data (Alexander), not a modeling default
-  to pick unilaterally. Left open, ownership noted.
+- **Opportunity-cost charging (decision 3 / I-4) — charging model now specified by Mitchell.**
+  New England has no excess wind capacity, so net load is never negative and there is never
+  surplus/curtailed wind to charge from for free. Report A's "zero hours of negative net load"
+  is therefore expected, not a puzzle. The charging model Mitchell specified on 2026-07-28:
+  1. **Charge storage from wind, timed to the highest-wind-speed hours** in the pre-event
+     window (turbine output rises steeply with wind speed, so this captures the most energy
+     for the least backfill). This is what the engine's `priority_wind_weight` (0.3 in the
+     `Priority = 0.7·Demand + 0.3·WindForecast` term, `config.py`) already biases toward.
+  2. **Backfill the load that the diverted wind was serving with LNG, pre-event, while gas is
+     still unconstrained.** Physically: wind → storage, LNG → load. Economically this is the
+     opportunity cost I-4 flagged, and it is now named — the marginal generator at charge time
+     is LNG, so charging is priced at the pre-event LNG cost, not zero.
+  3. **Discharge storage during the reliability event, when gas is constrained** (the fuel-
+     adequacy thesis). The value credited is event-time: displacing constrained/expensive
+     generation, e.g. the $443/MWh Event 17 price.
+  So decision 3 resolves **yes, charged wind carries an opportunity cost**, and the mechanism
+  is temporal arbitrage of *gas availability* — burn LNG when unconstrained, discharge stored
+  wind when it is not. This gives the **Fuel-Fired Generation Offset** metric its meaning:
+  add fuel-fired MWh pre-event, offset (more expensive, constrained) fuel-fired MWh during
+  the event; the net is what the asset is worth. What still needs Alexander is the *prices* —
+  pre-event LNG cost and event-time value — since the engine carries none (keeps 7 downstream
+  of 3). The modeling default is no longer open; the price inputs are.
 
 **Assumptions that may be wrong:**
 
