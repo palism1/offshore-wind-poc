@@ -149,6 +149,53 @@ decided yet; these move from "unowned" to "with Mitchell", no further.
    noted there: the file count is 24 where five months across five years would be 25, and the
    hour count agrees with 24 files only to within daylight-saving adjustments.
 
+**Clarifications received, 2026-07-28 (Mitchell's second reply):**
+
+These correct standing assumptions in `PROJECT_STATE_2026-07-28.md` and
+`FINDINGS_REVIEW_2026-07-24.md`. Recorded here as the living register; the source docs
+carry dated pointers back to this block rather than being rewritten.
+
+- **Scope is all of New England (ISO-NE system), not NEMA/Boston 4008.** This reverses the
+  Tier 2 "Scope is NEMA" ratification and the I-1 recommendation to reissue at NEMA scale.
+  Mitchell's reason is data availability — the offshore-wind and regional picture does not
+  hold together on a single load zone — while noting the storage itself only really benefits
+  eastern Massachusetts. Consequences, none yet actioned:
+  - The I-1 "5× oversize" is no longer an error to correct but the intended scale. The
+    system-wide reserve target is Report A Finding 6's **~40,000–60,000 MWh**, i.e. roughly
+    **2,000–3,000 full-scale (20 MWh) spheres**, not the NEMA 420–630. NEMA becomes the
+    "where it lands" sub-region, not the sizing basis.
+  - The 17,395-hour series is `locationId=4008` (NEMA). A New England study needs
+    `locationId=4000` (system-wide) from the **same public ISO Express endpoint**
+    (`DATA_SOURCES.md` [3]) — a re-pull, not a new data source or new credentials. The
+    stress-event set, the $443/MWh pricing, and the seasonal wind ratio all need recomputing
+    at 4000 before they anchor a system-scale claim.
+- **The shallow StEnSea unit is a deliberately theoretical variant, not a claim about a
+  built product.** Mitchell proposed it knowing no shallow-water sphere exists; the physics
+  is sound and the task is to *set* an achievable efficiency, not to find a demonstrated one.
+  This retires the Tier 5 "not a demonstrated variant" objection as a blocker. Guidance for
+  the scenario input: round-trip efficiency is set by the pump-turbine and motor-generator,
+  not by the head, so the shallow variant keeps Fraunhofer's **0.75–0.80** band; recommend
+  **0.75** as the conservative default. What the shallower head costs is *energy per sphere*,
+  which scales ~linearly with depth: a 20 MWh unit at ~700 m becomes ~5.7 MWh at ~200 m
+  (≈200/700), consistent with the 5.7–6.7 MWh/unit already used in `PROJECT_STATE` Tier 5.
+- **The "200 m off Provincetown" line was a landmark reference, not a claim of 200 m water
+  200 m from shore.** Provincetown is the nearest named place to a Gulf of Maine location a
+  bathymetry map showed at ≥200 m. This is consistent with published bathymetry: the Gulf of
+  Maine's deep basins all exceed 250 m (Wilkinson ~275 m, Jordan ~275 m, Georges 379 m, the
+  deepest), but they sit tens of miles offshore, separated by central highs of 90–150 m; the
+  nearest 200 m+ feature to Provincetown is **Wilkinson Basin**, roughly 50+ nmi to the
+  NE/E, while Stellwagen Basin immediately north of the Cape is only ~80–100 m. So the depth
+  exists and the landmark is roughly right; what still needs pinning is the **depth-vs-
+  distance curve** for a specific candidate point, because even Wilkinson's ~275 m is well
+  short of StEnSea's native 600–800 m — which is exactly why the shallow variant is needed.
+  Bathymetry map sources added to `DATA_SOURCES.md` so the team shares one reference.
+- **Opportunity-cost charging (decision 3 / I-4) is routed to Alexander.** Mitchell's framing:
+  New England only has *excess* wind when transmission cannot move it, and this project does
+  not model excess — it deliberately diverts wind into storage ahead of stress events
+  regardless. So whether "zero hours of negative net load" implies a charging opportunity
+  cost is a question for whoever owns the load/price data (Alexander), not a modeling default
+  to pick unilaterally. Left open, ownership noted.
+
 **Assumptions that may be wrong:**
 
 - The `STORAGE_SITING_TRADEOFF.md` calculation takes LAES round-trip efficiency of 0.50–0.70
@@ -157,12 +204,9 @@ decided yet; these move from "unowned" to "with Mitchell", no further.
 - Seasonal denominators (561,878 MWh summer / 434,214 MWh winter) remain underivable from
   available artifacts. Do not hard-code; derive during ETL and store in `features.constants`
   with the query.
-- The ~200 m depth claimed off Provincetown does not match published bathymetry. Needs a
-  depth-vs-distance curve from the USGS Massachusetts Bay model before that site anchors
-  anything. Mitchell said on 2026-07-28 that he has adjustment specs for a shallower StEnSea
-  system and will send them. He was asked for depth and round-trip efficiency together,
-  since those are the two fields a siting scenario needs. Not yet received, and his estimate
-  is not a primary source — it still needs checking against published bathymetry under
+- The shallow-StEnSea depth and efficiency Mitchell will send are a design estimate, not a
+  primary source. The efficiency band above is defensible from Fraunhofer's full-scale figure
+  but the specific candidate depth still needs checking against published bathymetry under
   convention #3.
 
 ## How to run it

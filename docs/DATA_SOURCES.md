@@ -26,9 +26,13 @@ decision, see Open decisions below) · `reference` (informs design, not ingested
 
 | Source | URL | Role |
 |---|---|---|
-| StEnSea seafloor storage specs (Fraunhofer) | https://www.iee.fraunhofer.de/en/topics/stensea.html | Storage-asset parameters (power MW, energy MWh, efficiency); note only a 1:10 unit built, 1:3 planned — model the full-scale 1:1 *design* |
+| StEnSea seafloor storage specs (Fraunhofer) | https://www.iee.fraunhofer.de/en/topics/stensea.html | Storage-asset parameters (power MW, energy MWh, efficiency 0.75–0.80); note only a 1:10 unit built, 1:3 planned — model the full-scale 1:1 *design*, and see [4] for the theoretical shallow-water variant |
 | EIA New England dashboard | https://www.eia.gov/dashboard/newengland/electricity | Demand/price context, sanity-checking ingested values |
 | gridstatus library | https://github.com/gridstatus/gridstatus | ETL wrapper over ISO-NE + EIA (pragmatic extract layer) |
+| NOAA NCEI Bathymetric Data Viewer | https://www.ncei.noaa.gov/maps/bathymetry/ | Interactive seafloor-depth map (GEBCO, coastal relief, multibeam layers); draw the Gulf of Maine depth-vs-distance curve for a candidate StEnSea site |
+| GEBCO gridded global bathymetry | https://www.gebco.net/data_and_products/gridded_bathymetry_data/ | Downloadable depth grid behind most viewers; use for a numeric depth profile |
+| CCOM/UNH Western Gulf of Maine bathymetry & backscatter | https://www.ccom.unh.edu/research/research-projects/wgom-bathymetry-backscatter | High-resolution multibeam survey of the western Gulf of Maine (the water nearest Cape Cod / Provincetown) |
+| Jordan Basin deep-water study (NOAA) | https://repository.library.noaa.gov/view/noaa/53045/noaa_53045_DS1.pdf | Primary-source depths for the Gulf's deep basins (Wilkinson/Jordan ~275 m, Georges 379 m) |
 
 Additional diagram/imagery references live in `DIAGRAM_REFERENCES.md`; claim-verification
 sources live in `FACT_CHECK_REPORT.md`. This file is for ingest and data provenance only.
@@ -99,3 +103,27 @@ Two things to check before the series anchors a result:
 - 24 monthly files over these months is roughly 17,400 hours, which agrees with the
   reported 17,395 to within the hours that daylight-saving transitions add and remove.
   The count is consistent; it is not by itself proof that no rows are missing.
+
+**Scope update, 2026-07-28.** Mitchell set study scope to all of New England (ISO-NE
+system-wide), not NEMA/Boston. The 17,395-hour series above is `locationId=4008` (NEMA). A
+system-wide pull uses **`locationId=4000`** on the *same* report tree and endpoint — no new
+source, no credentials — and the ETL should be parameterized on `locationId` so both scopes
+run from one code path. The NEMA series stays useful as the eastern-Massachusetts sub-region
+where the storage actually lands. See `HANDOFF.md` → "Clarifications received, 2026-07-28".
+
+## [4] Theoretical shallow-water StEnSea variant
+
+Fraunhofer's built/planned units are full-depth (500–800 m). No shallow-water sphere exists;
+the Gulf of Maine's deepest water (~275 m in the near basins, 379 m at Georges) does not
+reach StEnSea's native depth, so Mitchell proposed a **theoretical shallower variant** for
+this study. It is a design assumption, not a product spec. Physics for the scenario input:
+
+- **Round-trip efficiency ≈ 0.75–0.80** (recommend 0.75). Efficiency is governed by the
+  pump-turbine and motor-generator, not the head, so the shallow variant keeps the
+  full-scale band. Source: Fraunhofer StEnSea (0.75–0.80 published).
+- **Energy per sphere scales ~linearly with depth (pressure head).** A 20 MWh unit at
+  ~700 m falls to ~5.7 MWh at ~200 m (≈200/700). This matches the 5.7–6.7 MWh/unit figure
+  in `PROJECT_STATE_2026-07-28.md` Tier 5.
+
+A specific candidate depth still needs a depth-vs-distance point from the bathymetry viewers
+in the reference table above before it anchors a siting scenario.

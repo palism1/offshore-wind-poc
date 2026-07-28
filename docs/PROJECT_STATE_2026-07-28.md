@@ -61,6 +61,12 @@ conventional and defensible. Name it MPC in front of a technical audience.
 and the CSV all say NEMA, and someone produced 17,395 hours of NEMA data to build the
 reports. Needs a one-line ratification so it stops being re-litigated.
 
+> **Reversed, 2026-07-28.** Mitchell set scope to all of New England (ISO-NE system-wide),
+> for data-availability reasons, with NEMA as the sub-region the storage benefits. This
+> undoes the NEMA ratification and the I-1 "reissue at NEMA scale" recommendation; sizing
+> reverts toward Report A Finding 6's system-wide numbers. See `HANDOFF.md` →
+> "Clarifications received, 2026-07-28", and `DATA_SOURCES.md` (pull at `locationId=4000`).
+
 **Canonical wind dataset.** Also settled de facto by those same reports (NEMA 4008 hourly,
 2022–2026, 2023 flagged anomalous). On the board as open; it is really just unrecorded.
 
@@ -196,6 +202,12 @@ is one-third *diameter* (10 m, 0.5–1 MWh) deployed at **full depth, 500–700 
 built a shallow-water sphere. Energy scales with the pressure head, so a 200 m unit is a new
 engineering case, not a scaled-down version of a tested one.
 
+> **Clarified, 2026-07-28.** Mitchell confirms the shallow unit is a *deliberately
+> theoretical* variant — the point is to set an achievable efficiency, not to cite a built
+> one. This is no longer a blocker. Physics: efficiency stays ~0.75–0.80 (turbomachinery-set,
+> not head-set; recommend 0.75); energy per sphere scales with head (~5.7 MWh at 200 m vs
+> 20 MWh at 700 m). See `DATA_SOURCES.md` [4].
+
 ### The Provincetown site claim needs verification before it anchors anything
 
 "~200 m just off Provincetown, deepest in New England" does not match published
@@ -203,6 +215,12 @@ bathymetry. Wilkinson Basin reaches ~275 m but sits centrally in the Gulf of Mai
 from Provincetown. Stellwagen Basin in Massachusetts Bay is closer to ~100 m. Somebody
 should pull the USGS Massachusetts Bay bathymetry model and put an actual depth-vs-distance
 curve behind the site before it becomes the plan.
+
+> **Clarified, 2026-07-28.** Mitchell says Provincetown was only a *landmark* near a mapped
+> Gulf of Maine point at ≥200 m, not a claim of 200 m water just off the beach — which is
+> consistent with the bathymetry above (Wilkinson ~275 m, ~50+ nmi NE/E; Stellwagen ~100 m
+> nearer in). The open item is unchanged: a depth-vs-distance curve for a specific candidate
+> point. Map sources now in `DATA_SOURCES.md` reference table.
 
 ### Sand battery comparison
 
