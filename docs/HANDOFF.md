@@ -105,7 +105,9 @@ Remaining checklist from `docs/PROJECT_STATE_2026-07-28.md`, in order:
 
 ## Open questions and decisions not yet made
 
-**Blocked on the team, each blocks code:**
+**Blocked on the team, each blocks code.** Mitchell volunteered on 2026-07-28 to take 1–3
+and raised the impact-target question himself, which is the threshold half of 7. Nothing is
+decided yet; these move from "unowned" to "with Mitchell", no further.
 
 1. **Round-trip efficiency default.** `config.py` ships 1.0; Report B computed everything at
    0.85. At 1.0 the engine understates required charging energy by 17.6%. Recommend 0.85.
@@ -122,9 +124,20 @@ Remaining checklist from `docs/PROJECT_STATE_2026-07-28.md`, in order:
 5. **Cycle count per year.** Identified 2026-07-28 as the variable the storage siting
    trade-off turns on, and completely unspecified. At ~10 cycles/yr capex dominates; at
    ~200 the efficiency case returns. Should become a scenario input.
+
+   Mitchell read this on 2026-07-28 as the lifecycle payback question — whether the capex
+   amortizes against fuel saved. That is one of the two things the number decides. The other
+   is the siting trade-off, where the same figure decides whether the near-shore efficiency
+   argument holds. Both halves need the answer; whoever supplies it should know it is
+   answering two questions.
 6. **Does "Scenario Robustness Score" replace "Decision Confidence"?** Unconfirmed.
 7. **Who owns the capex/payback formula?** Offered to the channel 2026-07-23, unclaimed.
-   Thresholds assigned to Alexander, still undefined.
+   Thresholds assigned to Alexander, still undefined. Mitchell raised the impact-target
+   question unprompted on 2026-07-28 and was offered the thresholds; unconfirmed.
+
+   Any payback on fuel savings needs a price, and the engine carries no prices at all. This
+   makes 7 downstream of 3 — until charged wind is priced or explicitly not priced, a fuel
+   saving cannot be computed as net.
 
 **Answered, 2026-07-28:**
 
@@ -146,7 +159,11 @@ Remaining checklist from `docs/PROJECT_STATE_2026-07-28.md`, in order:
   with the query.
 - The ~200 m depth claimed off Provincetown does not match published bathymetry. Needs a
   depth-vs-distance curve from the USGS Massachusetts Bay model before that site anchors
-  anything.
+  anything. Mitchell said on 2026-07-28 that he has adjustment specs for a shallower StEnSea
+  system and will send them. He was asked for depth and round-trip efficiency together,
+  since those are the two fields a siting scenario needs. Not yet received, and his estimate
+  is not a primary source — it still needs checking against published bathymetry under
+  convention #3.
 
 ## How to run it
 
