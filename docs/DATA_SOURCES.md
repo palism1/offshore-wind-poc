@@ -28,7 +28,7 @@ decision, see Open decisions below) · `reference` (informs design, not ingested
 
 | Source | URL | Role |
 |---|---|---|
-| StEnSea seafloor storage specs (Fraunhofer) | https://www.iee.fraunhofer.de/en/topics/stensea.html | Storage-asset parameters (power MW, energy MWh, efficiency 0.75–0.80); note only a 1:10 unit built, 1:3 planned — model the full-scale 1:1 *design*, and see [4] for the theoretical shallow-water variant |
+| StEnSea seafloor storage specs (Fraunhofer) | https://www.iee.fraunhofer.de/en/topics/stensea.html | Storage-asset parameters. Full-scale 1:1 **design**: 30 m OD, 20 MWh, **5–7 MW**, **80%** round-trip, 600–800 m. Built/planned units are smaller and less efficient — 1:10 (3 m, 100 m, 40%) and 1:3 (10 m, 500–700 m, 60%). Model the 1:1 design; see [4] for the theoretical shallow-water variant |
 | EIA New England dashboard | https://www.eia.gov/dashboard/newengland/electricity | Demand/price context, sanity-checking ingested values |
 | gridstatus library | https://github.com/gridstatus/gridstatus | ETL wrapper over ISO-NE + EIA (pragmatic extract layer) |
 | NOAA NCEI Bathymetric Data Viewer | https://www.ncei.noaa.gov/maps/bathymetry/ | Interactive seafloor-depth map (GEBCO, coastal relief, multibeam layers); draw the Gulf of Maine depth-vs-distance curve for a candidate StEnSea site |
@@ -165,12 +165,20 @@ the Gulf of Maine's deepest water (~275 m in the near basins, 379 m at Georges) 
 reach StEnSea's native depth, so Mitchell proposed a **theoretical shallower variant** for
 this study. It is a design assumption, not a product spec. Physics for the scenario input:
 
-- **Round-trip efficiency ≈ 0.75–0.80** (recommend 0.75). Efficiency is governed by the
-  pump-turbine and motor-generator, not the head, so the shallow variant keeps the
-  full-scale band. Source: Fraunhofer StEnSea (0.75–0.80 published).
-- **Energy per sphere scales ~linearly with depth (pressure head).** A 20 MWh unit at
-  ~700 m falls to ~5.7 MWh at ~200 m (≈200/700). This matches the 5.7–6.7 MWh/unit figure
-  in `PROJECT_STATE_2026-07-28.md` Tier 5.
+- **Round-trip efficiency 0.70** (Mitchell, 2026-07-28). **Corrected 2026-07-28:** this
+  section previously said "0.75–0.80 published, recommend 0.75" and attributed the band to
+  Fraunhofer. Fraunhofer publishes a **single 80%** figure for the full-scale design; the
+  0.75 was our own haircut presented as sourced. Their built/planned units run **lower** —
+  40% at 1:10 and 60% at 1:3 — though that series confounds machine scale with depth, so it
+  proves nothing about head-independence in either direction. 0.70 sits between the built 1:3
+  figure and the 1:1 design figure and is the better-supported choice for a novel shallow
+  variant. Source: https://www.iee.fraunhofer.de/en/topics/stensea.html
+- **Energy per sphere scales ~linearly with depth (pressure head).** A 30 m sphere at 200 m
+  and 0.70 gives **4.5–5.0 MWh** (0.5–1.0 m wall). Sanity check on the model: the same
+  geometry reproduces Fraunhofer's own 20 MWh at **701–779 m**, inside their published
+  600–800 m band, so the shallow figure rests on a model that recovers the manufacturer's
+  headline number. Slightly below the 5.7–6.7 MWh/unit in `PROJECT_STATE_2026-07-28.md`
+  Tier 5, which assumed 0.75–0.80 efficiency rather than 0.70.
 
 A specific candidate depth still needs a depth-vs-distance point from the bathymetry viewers
 in the reference table above before it anchors a siting scenario.
@@ -181,10 +189,10 @@ Supplied as "interpolated from the other prototypes", explicitly open to revisio
 
 | Parameter | Mitchell's value | Check |
 |---|---|---|
-| Power | 1.67 MW (33.33% of 5 MW) | consistent with `5 MW × 200/600` **only at η≈0.814**, not at 0.70 |
-| Energy capacity | 20 MWh | **inconsistent** with 30 m + 200 m; that geometry yields 4.5–5.5 MWh |
-| Outer diameter | 30 m | Fraunhofer full-scale figure |
-| Efficiency | 0.70 | adopted; supersedes the 0.75 recommended above and Report B's 0.85 |
+| Power | 1.67 MW (33.33% of 5 MW) | consistent with `5 MW × 200/600` **only at η≈0.814**, not at 0.70. Note Fraunhofer states **5–7 MW**; 5 is the conservative end |
+| Energy capacity | 20 MWh | **inconsistent** with 30 m + 200 m; that geometry yields 4.5–5.0 MWh |
+| Outer diameter | 30 m | Fraunhofer full-scale figure — verified |
+| Efficiency | 0.70 | adopted. **Verified that Mitchell is right**: Fraunhofer's full-scale design is 80% and no unit exceeds it, so the previously recommended 0.85 was above the manufacturer's best case |
 | Hydraulic head | 200 m | shallow-variant target |
 | Flow rate | ~1.02 m³/s | this is the **5 MW / 600 m / η≈0.81** flow, carried over unscaled |
 
@@ -194,12 +202,16 @@ Using `P = ρ·g·Q·h·η` with ρ=1025 kg/m³, g=9.81 m/s²:
   For 1.67 MW at η=0.70, **Q = 1.186 m³/s**. Recommend keeping 1.67 MW and restating
   Q ≈ **1.19 m³/s**.
 - **Energy / geometry cannot both hold.** 20 MWh at h=200, η=0.70 needs **~51,100 m³** of
-  working volume — a **~46 m** sphere. A 30 m sphere is 14,137 m³ gross (~11,500–12,100 m³
-  internal at a 0.75–1.0 m wall) → **4.5–5.5 MWh** at 200 m. The same 30 m sphere at
-  600–800 m and η=0.80 gives 15–21 MWh, which is the source of the 20 MWh figure.
+  working volume — a **~46 m** sphere. A 30 m sphere is 14,137 m³ gross (11,494–12,770 m³
+  internal at a 0.5–1.0 m wall) → **4.5–5.0 MWh** at 200 m.
+  **The model is validated against Fraunhofer:** the same geometry puts 20 MWh at
+  **701–779 m** (η=0.80), inside their published 600–800 m band, for any wall thickness in
+  0.5–1.0 m. So the 20 MWh figure is the full-depth rating and the ~5 MWh shallow figure
+  comes from a model that independently recovers the manufacturer's own headline number.
 - **Consequence.** Duration is 12 h if 20 MWh/1.67 MW holds, ~3 h at the geometry-consistent
   ~5 MWh. Sphere count for a 40,000–60,000 MWh system reserve moves from ~2,000–3,000 to
-  **~8,000–12,000**.
+  **~8,000–13,000**. Both rest on Report A's 40–60 GWh target, whose own derivation is loose
+  — see `FACT_CHECK_REPORT.md` addendum, internal inconsistency 7.
 
 Resolution: fix two of {outer diameter, head, energy per sphere} and let the third follow.
 Pending Mitchell's choice, the modeling default is 30 m + 200 m + ~5 MWh + 1.67 MW.

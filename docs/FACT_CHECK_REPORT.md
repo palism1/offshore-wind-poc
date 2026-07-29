@@ -40,3 +40,110 @@ Verification pass against the three source documents
 - **Data access.** ISO-NE Web Services API v1.1 (https://webservices.iso-ne.com/docs/v1.1/) is the primary source for hourly load and LMP; EIA API v2 for generation/capacity. The open-source `gridstatus` Python library wraps both with a consistent interface and is the pragmatic ETL choice. https://github.com/gridstatus/gridstatus
 - **Reference architecture.** VPP-Sim (open-source virtual power plant framework) validates the intended stack: FastAPI backend, TimescaleDB (PostgreSQL extension) for time series, a separate optimization/dispatch module reading forecasts from the DB. https://www.researchgate.net/publication/397208596
 - **Provenance (an explicit project goal).** Standard pattern: land raw API payloads immutably, transform in versioned steps, tag every simulation result with input dataset versions and code version. This directly serves the "auditable results" requirement.
+
+---
+
+# Fact-Check Addendum — 2026-07-28 (Mitchell's third reply)
+
+Every checkable claim in the 2026-07-28 record, verified against primary sources. The two
+analysis PDFs were re-read directly (`pdftotext -layout`) rather than via our own summaries.
+
+## Verified
+
+- **StEnSea full-scale (1:1) design: 30 m outer diameter, 20 MWh, 5–7 MW, 80% round-trip
+  efficiency, 600–800 m depth.** Fraunhofer IEE, primary.
+  https://www.iee.fraunhofer.de/en/topics/stensea.html
+- **StEnSea prototype efficiency series: 40% at 1:10 (3 m, 100 m depth) → 60% at 1:3 (10 m,
+  500–700 m) → 80% at 1:1 (30 m, 600–800 m).** Same source. **Mitchell is correct that no
+  StEnSea unit, including the full-scale design, exceeds 0.80.**
+- **Report B computes charging gaps at 85% round-trip efficiency.** Verbatim, Finding 2.2:
+  "the 7-day pre-event wind total was large enough to eliminate the charging gap entirely at
+  a 5% load reduction target and 85% round-trip efficiency." Source: `NE_Stage1_Stage2_
+  Findings.pdf`, Finding 2.2.
+- **Report B's stress rule is the 12-hour one.** Verbatim: "A stress day is defined as any
+  calendar day with 12 or more hours above the threshold; a multi-day event is two or more
+  consecutive stress days." Threshold 3,504 MWh at p90, 1,740 of 17,395 stress hours (10.0%).
+- **Report A: zero hours of negative net load.** "Hours where net load < 0: 0 — no oversupply,
+  no curtailment needed." Supports the opportunity-cost charging model.
+- **Event 17 (Jan 25–31, 2026) at $443/MWh is the highest-cost event in the dataset.** Report B.
+- **Report A's 40,000–60,000 MWh reserve target.** Report A, Implications: 5% of the 16,750 MWh
+  threshold = ~838 MWh per stressed hour. (Derivation is loose — see Internal Inconsistencies.)
+- **ISO-NE all-time summer peak 28,130 MW (Aug 2, 2006); winter record 22,818 MW (Jan 15,
+  2004).** https://www.iso-ne.com/about/key-stats/electricity-use
+- **Gulf of Maine: three basins deeper than 200 m — Georges 379 m (deepest), Jordan and
+  Wilkinson ~275 m each.** https://repository.library.noaa.gov/view/noaa/53045/noaa_53045_DS1.pdf
+- **EIA `electricity/rto/fuel-type-data` is EIA-930 hourly generation by fuel type**, with
+  `respondent=ISNE` and `fueltype=WND` as the ISO-NE wind series; an unkeyed request returns
+  `API_KEY_MISSING` (tested 2026-07-28). https://www.eia.gov/opendata/documentation.php
+
+## Internal math — verified by computation
+
+ρ = 1025 kg/m³, g = 9.81 m/s², `P = ρ·g·Q·h·η`, `E = ρ·g·V·h·η`.
+
+- Q=1.02 m³/s, h=200 m, η=0.70 → **1.436 MW** (not 1.67).
+- 1.67 MW at h=200, η=0.70 → **Q = 1.186 m³/s**.
+- 1.67 MW at Q=1.02, h=200 → **η = 0.814**; and 5 MW at h=600, η=0.814 → Q = 1.018 m³/s,
+  confirming 1.02 is the unscaled full-scale flow.
+- 20 MWh at h=200, η=0.70 → **51,146 m³**, a **46.1 m** sphere.
+- 30 m sphere: 14,137 m³ gross; 11,494–12,770 m³ internal at 0.5–1.0 m wall → **4.5–5.0 MWh**
+  at 200 m / 0.70.
+- **Model validation:** the same geometry reproduces Fraunhofer's own 20 MWh at **701–779 m**
+  for any wall thickness in 0.5–1.0 m — squarely inside their published 600–800 m band. The
+  ~5 MWh at 200 m therefore rests on a model that independently recovers the manufacturer's
+  headline figure.
+- Sphere count for 40,000–60,000 MWh: **2,000–3,000** at 20 MWh/unit; **8,000–13,000** at the
+  geometry-consistent 4.5–5.0 MWh/unit.
+- Duration: 12.0 h at 20 MWh/1.67 MW; **~3.0 h** at 5 MWh/1.67 MW.
+- Seasonal denominators as peak-*day* totals: 434,214 ÷ 24 = **18.1 GW**, 561,878 ÷ 24 =
+  **23.4 GW** — ISO-NE system scale (vs NEMA's ~3.9 GW winter / ~5.5 GW summer peaks in
+  Report B's own tables), so they did not need rescaling when scope went system-wide.
+
+## Contradicted — corrections to our own documents
+
+1. **"Fraunhofer publishes 0.75–0.80."** It publishes **0.80** for the full-scale design, a
+   single figure. The 0.75 was our own conservative haircut presented as if sourced. Corrected
+   in `DATA_SOURCES.md` [4] and the reference table. Consequence: the previously recommended
+   0.85 sat **above the manufacturer's own best-case number** — Mitchell's objection is
+   correct and the 0.85 recommendation was wrong on the primary source, not merely optimistic.
+2. **"Full-scale rated power is 5 MW."** Fraunhofer states **5–7 MW**. Mitchell's "33.33% of
+   5 MW" uses the bottom of the range, which is conservative and fine, but the range exists
+   and the upper end would give 2.33 MW at 200 m.
+3. **"Efficiency is governed by the pump-turbine and motor-generator, not the head, so the
+   shallow variant keeps the full-scale band."** Overstated. Fraunhofer's own series falls
+   40% → 60% → 80%, and that series **confounds machine scale with depth**, so it cannot be
+   used to prove head-independence either way. The physics argument is plausible; it is not
+   evidence. Mitchell's **0.70** sits between the built 1:3 figure (60%) and the full-scale
+   design figure (80%) and is the better-supported choice.
+4. **Report A's seasons are Jan–Mar (winter) and Jun–Jul (summer)** — both differ from
+   Mitchell's 2026-07-28 definitions (Dec 1–Feb 28/29 and Jun 1–Sep 30). Report A's headline
+   **"winter wind is 80% higher than summer" (568 vs 315 MWh/hr, 1.80×)** — which Report A
+   itself calls "the single most important result for the strategic reserve concept" — is
+   computed on months that are wrong in both directions: winter includes March (now excluded)
+   and omits December (now included); summer omits August and September. **It must be
+   recomputed before it anchors anything.**
+5. **Both reports' p90 thresholds are hourly-basis, not daily-total basis.** Report B applies
+   p90 "to hourly load data" (3,504 MWh); Report A's 16,750 MWh is likewise hourly (its peak
+   loads of 18,758–19,378 MWh are hourly, and it counts "16 stress hours" in a day). Mitchell's
+   definition thresholds **daily total demand**. **Neither existing threshold number carries
+   over** — a new p90 must be computed over daily sums, roughly an order of magnitude larger.
+   Anyone reusing 16,750 MWh under the new definition would be wrong by ~24×.
+
+## Internal Inconsistencies (raise with team)
+
+7. **Report A's 40–60 GWh sizing anchor does not reproduce from its own inputs.** 5% × 16,750
+   = 837.5 MWh per stressed hour. Over the 7-day Event 3, at the 16 stress-hours/day Report A
+   itself cites for Jan 21–22, that is ~94,000 MWh. The stated 40,000–60,000 MWh implies only
+   **6.8–10.2 stressed hours/day**. Every sphere count in this project descends from that
+   figure, so it needs a stated derivation before it anchors a published number.
+8. **Report B's "summer dominates stress events" (16 of 19) excludes August**, the month of
+   ISO-NE's all-time system peak (28,130 MW, Aug 2 2006). Its summer is Jun–Jul only. Both
+   seasonal counts rest on two-month windows; under Mitchell's definitions winter gains
+   December and summer gains August–September, and the 16:3 ratio is unresolved until then.
+
+## Unverifiable
+
+- **The shallow-water 200 m StEnSea variant.** No built or designed unit exists at that head;
+  Mitchell states this openly. Efficiency 0.70 and ~5 MWh/sphere are design estimates,
+  defensible by scaling but not sourced. Label as assumptions on any slide.
+- **Whether 0.70 is the round-trip or one-way figure.** Not stated. Round-trip → ~0.837 each
+  way; one-way turbine → ~0.49 round-trip. Blocks `config.py`.

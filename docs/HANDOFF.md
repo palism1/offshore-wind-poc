@@ -120,7 +120,9 @@ decided yet; these move from "unowned" to "with Mitchell", no further.
    event is a run of **2+ consecutive days** (minimum stress window is a user parameter) whose
    **daily total demand** sits above the **historical 90th-percentile** threshold. There is no
    hours-above-an-hourly-threshold criterion in event identification. Report B's "12+ hours
-   above threshold = stress day" rule is **retired**. Details and the code delta below.
+   above threshold = stress day" rule is **retired**. Details and the code delta below. The
+   published threshold *values* (3,504 and 16,750 MWh) do **not** carry over — both are
+   hourly-basis and the new rule is daily-basis. A fresh p90 must be computed on daily sums.
 3. **Is charged wind priced at opportunity cost?** Report A found zero hours of negative net
    load, so no free wind exists. Recommend yes. Largest correctness gap in the model.
 4. **Reserve usage rules** — when the 10% strategic reserve and the 20% floor may each be
@@ -284,6 +286,16 @@ carry dated pointers back to this block rather than being rewritten.
   - Open detail worth confirming: the 90th percentile is taken over **daily totals across the
     historical winter record** (all Dec–Feb days in the five-year set), not over hourly values
     and not per-winter. That is the reading being implemented.
+  - **Neither published threshold number survives this change.** Verified against the source
+    PDFs 2026-07-28: both reports take p90 over **hourly** load. Report B states it outright
+    ("Applying the 90th percentile threshold (3,504 MWh) to hourly load data"), and Report A's
+    16,750 MWh is hourly too — its peak loads of 18,758–19,378 MWh are hourly values and it
+    counts "16 stress hours" within a day. Mitchell's rule thresholds **daily totals**, a
+    population roughly 24× larger in magnitude. **A new p90 must be computed on daily sums;
+    reusing 16,750 MWh or 3,504 MWh under the new definition would be wrong by about 24×.**
+    This also means the event sets in both reports are not comparable to what `stress_finder`
+    will now produce, and the 19-event and 3-event tables should be regarded as superseded
+    rather than as validation targets.
 - **MVP v1.0 data scope: five winters, 2021/22 through 2025/26, December 1 – February 28/29.**
   Summer is deferred past v1.0.
   - **Season definitions are now fixed:** **winter = Dec 1 – Feb 28/29**, **summer =
@@ -301,6 +313,18 @@ carry dated pointers back to this block rather than being rewritten.
     August and September; Alexander has Jun/Jul only. Ten more files (`...YYYY08`, `...YYYY09`
     across 2022–2026). Not blocking — summer is post-v1.0 — but the current Jun/Jul files are
     half a season, not a season, and should not be described as summer coverage.
+  - **Two published results are invalidated by the new season boundaries** (verified against
+    the source PDFs, 2026-07-28):
+    - **Report A's "winter wind is 80% higher than summer" (568 vs 315 MWh/hr, 1.80×)** uses
+      winter = **Jan–Mar** and summer = **Jun–Jul**. Under the new definitions winter loses
+      March and gains December, and summer gains August–September. Report A calls this "the
+      single most important result for the strategic reserve concept," and it is the empirical
+      basis of the whole thesis — **recompute it before it anchors anything.** (It already
+      failed to reproduce once: I-5 in `FINDINGS_REVIEW` gets 1.72× from Report B's own table.)
+    - **Report B's "summer dominates stress events, 16 of 19"** uses summer = Jun–Jul, which
+      **excludes August — the month of ISO-NE's all-time system peak (28,130 MW, 2 Aug 2006).**
+      Both seasonal counts sit on two-month windows. Winter gains December, summer gains
+      August–September, and the 16:3 ratio is unresolved until both are re-run.
 - **Hourly wind source: EIA `electricity/rto/fuel-type-data`** (EIA-930 hourly generation by
   fuel type; ISO-NE respondent, `WND` fuel type). This **resolves the daily-vs-hourly flag**
   raised against Alexander's ISO-NE `daily-gen-fuel-type` choice — charging needs hourly wind
@@ -320,6 +344,12 @@ carry dated pointers back to this block rather than being rewritten.
 - The `STORAGE_SITING_TRADEOFF.md` calculation takes LAES round-trip efficiency of 0.50–0.70
   from Mitchell's Discord post. Not checked against a primary source. Do that before it
   drives a decision.
+- **Report A's 40,000–60,000 MWh reserve target does not reproduce from its own inputs.**
+  5% × 16,750 MWh = 837.5 MWh per stressed hour; over the 7-day Event 3 at the 16
+  stress-hours/day Report A itself cites, that is ~94,000 MWh. The stated 40–60 GWh implies
+  only 6.8–10.2 stressed hours/day. **Every sphere count in this project descends from this
+  number** (2,000–3,000 at 20 MWh/unit, 8,000–13,000 at ~5 MWh/unit), so it needs a stated
+  derivation before any of them reach a slide. Recorded 2026-07-28 in `FACT_CHECK_REPORT.md`.
 - Seasonal denominators (561,878 MWh summer / 434,214 MWh winter) remain underivable from
   available artifacts. Do not hard-code; derive during ETL and store in `features.constants`
   with the query. **Mitchell's 2026-07-28 season definitions (winter Dec 1 – Feb 28/29,
