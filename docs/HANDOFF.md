@@ -7,9 +7,15 @@ Read this first when resuming in a fresh session.
 
 Phases 0–4 and CI are complete and tested. The engine, the FastAPI layer, the Postgres
 repository, the ETL extract skeleton, and the simulator CLI all work; nothing in the code
-is half-finished. This session built the **simulator CLI**: a terminal entry point
-(`simulate`, also runnable as `python -m owr`) that reads a day-profile CSV and drives the
-engine loop end to end. It is the demoable v1.0 the team decided on 2026-07-23.
+is half-finished. The simulator CLI (`simulate`, also runnable as `python -m owr`) reads a
+day-profile CSV and drives the engine loop end to end — the demoable v1.0 the team decided
+on 2026-07-23.
+
+This session (2026-07-28, second half) landed four independent, **uncommitted** work items
+against `docs/PLAN_STORAGE_PHYSICS_PEAK_WINDOW.md`: `storage_physics.py` (sphere physics,
+not wired up), the 3-hour peak-window finder (identification only), the `equivalent_full_cycles`
+metric consolidated into `metrics.py`, and `default_severity_percentile` moving 0.95 → 0.90.
+See "What is in flight" below for the working-tree state.
 
 ## What this project is
 
@@ -23,16 +29,17 @@ ISO-NE 21-day page we cite is a generator fuel-supply report and supports the fo
 
 ## What works, verified
 
-This session opened at commit `7c18531` with 66 passed, 3 skipped. The simulator CLI added
-86 tests. Verified at `17bdb9c`, the current tip of `main`:
+`main` was last verified at commit `17bdb9c` with 152 passed, 3 skipped, ruff clean, clean
+working tree, 0 unpushed. The current, **uncommitted** working tree (storage physics +
+peak-window + EFC + p90 default) was verified 2026-07-28:
 
 | Check | Command | Result |
 |---|---|---|
-| Test suite | `uv run pytest` | **152 passed, 3 skipped** (skips are Docker-gated Postgres tests) |
+| Test suite | `uv run pytest` | **231 passed, 3 skipped** (skips are Docker-gated Postgres tests) |
 | Lint | `uv run ruff check .` | **All checks passed** |
-| Working tree | `git status --short` | clean |
-| Remote sync | `git log origin/main..HEAD` | 0 unpushed |
-| Branches | `git branch -a` | `main` only, local and remote |
+| Demo command | `uv run simulate --input examples/synthetic_winter_stress.csv --storage-mwh 20000 --power-mw 2000` | unchanged output shape; `--format json` still serializes (`WrapConvention` is `StrEnum`) |
+| CSV tie invariant | `uv run python examples/make_synthetic_winter_stress.py` then `git diff --exit-code examples/synthetic_winter_stress.csv` | byte-identical — p90 and p95 both land on 216,000 MWh on this series |
+| Working tree | `git status --short` | **dirty** — not committed, see "What is in flight" |
 
 | Phase | Scope | State |
 |---|---|---|
@@ -62,11 +69,24 @@ Every commit SHA changed. Consequences:
 
 ## What is in flight
 
-**Nothing.** The working tree is clean, everything is on `origin/main`, and `main` is the
-only branch — local and remote. Verified this session: **152 passed, 3 skipped**, ruff clean.
+**Uncommitted, not pushed.** `docs/PLAN_STORAGE_PHYSICS_PEAK_WINDOW.md`, implemented and
+verified (231 passed, 3 skipped; ruff clean) but not yet committed:
 
-The simulator CLI landed in three commits: `160eebb` (the CLI), `ad14298` (NEMA series
-provenance), `17bdb9c` (canonical ISO Express URL). The Discord project update was posted.
+- New: `src/owr/storage_physics.py`, `src/owr/peak_window.py`,
+  `tests/test_storage_physics.py`, `tests/test_peak_window.py`.
+- Changed: `src/owr/models.py` (`WrapConvention`, `PeakWindow`), `src/owr/config.py`
+  (peak-window defaults, `default_severity_percentile` 0.95 → 0.90), `src/owr/__init__.py`
+  (export parity), `src/owr/metrics.py` (`equivalent_full_cycles`), `src/owr/cli.py` (EFC
+  call site, `stress_event_definition` note text), `src/owr/api/schemas.py`
+  (`ScenarioCreate.severity_percentile`), `db/migrations/001_init.sql` (comment only),
+  `examples/make_synthetic_winter_stress.py` (docstring only — CSV output unchanged),
+  `docs/DATA_SOURCES.md`, `docs/PLAN_SIMULATOR_CLI.md` (dated pointers), plus this file.
+- Nothing built here is wired into `StorageAsset`, `dispatch.py`, or any peak-shaving /
+  ramp-reduction formula — see the governing-constraint table in the plan and the
+  peak-window block above.
+
+Before this, the simulator CLI landed in three commits: `160eebb` (the CLI), `ad14298`
+(NEMA series provenance), `17bdb9c` (canonical ISO Express URL) — all on `origin/main`.
 
 ## Next step
 
@@ -100,7 +120,8 @@ Remaining checklist from `docs/PROJECT_STATE_2026-07-28.md`, in order:
 3. Tier 3 decisions — raised with recommendations, blocked on the team.
 4. ~~Efficiency-vs-transmission-distance calculation~~ — done, commit `1e4a241`.
 5. ~~Simulator CLI~~ — done, commit `160eebb`.
-6. Metric formulas into `metrics.py` — blocked on the formulas and thresholds.
+6. ~~Metric formulas into `metrics.py`~~ — EFC done, uncommitted (see "What is in flight");
+   peak-shaving and ramp-reduction formulas remain blocked on the team.
 7. **Phase 2 ETL against the public endpoint** — unblocked 2026-07-28, next.
 
 ## Open questions and decisions not yet made
@@ -145,6 +166,17 @@ decided yet; these move from "unowned" to "with Mitchell", no further.
    can contain more than one cycle if wind allows a mid-event recharge. EFC handles both
    without a convention argument, and it is what degradation and warranty terms are quoted
    against. Events per year sets the floor; EFC is the number the payback math needs.
+
+   **Decision 5 — resolved 2026-07-28.** The EFC definition above (`discharged_mwh /
+   rated_energy_mwh`, `discharged_mwh` energy delivered at the terminals) now has **one
+   implementation**, `owr.metrics.equivalent_full_cycles`. `cli.py` previously computed a
+   second, conflicting formula — `(energy_discharged / efficiency) / total_mwh`, i.e. energy
+   *drawn from the tank* over rated capacity — which coincided with the settled definition
+   only at the shipped `efficiency = 1.0`. That variant is retired; `cli.py` now calls
+   `metrics.equivalent_full_cycles` and its table label reads "(energy discharged / rated
+   capacity)". Once decision 1 (round-trip-vs-one-way) flips `default_efficiency` off 1.0,
+   reported EFC will differ from the old formula's number by the efficiency factor — that is
+   the point of retiring the duplicate, not a regression.
 
    **The order of magnitude is the finding.** Under Report B's counts — 19 events over five
    years, of which only **3 are winter** — a winter-reliability asset runs **~0.6 cycles/yr**
@@ -299,30 +331,38 @@ carry dated pointers back to this block rather than being rewritten.
   such days (minimum window user-configurable) forming an event. Hourly counting plays no part
   in identification. The **implemented `stress_finder` already matches this exactly** — it
   thresholds daily energy against a percentile of the series and requires
-  `min_stress_window_days` consecutive days. The only code delta is
-  **`default_severity_percentile: 0.95 → 0.90`** in `config.py`, plus removing the "competing
-  12-hour rule" language from that docstring and from decision 2. The 3-artifact
+  `min_stress_window_days` consecutive days. The code delta is
+  **`default_severity_percentile: 0.95 → 0.90`**, applied on every surface that carries the
+  value so none can drift from the others: `config.py` (`Config.default_severity_percentile`
+  and its docstring), `api/schemas.py` (`ScenarioCreate.severity_percentile`, guarded by a
+  `test_config.py` drift test), `cli.py`'s `stress_event_definition` open-question note, and
+  `db/migrations/001_init.sql`'s comment. Plus removing the "competing 12-hour rule" language
+  from the `config.py` docstring, the `cli.py` note, and this block. The 3-artifact
   disagreement is closed.
-  - **New, separate step — specified by Mitchell 2026-07-28 23:12.** Once events are
-    identified, each day in the window gets a **peak load defined as a 3-hour period**, found
-    by rolling window over hour triplets: (00,01,02), (01,02,03), … (22,23,00). Sum the load
-    in each triplet, compare triplets, take the maximum as the peak. **It drives dispatch:**
-    the peak-shaving formula applies to that triplet, and a **ramp-reduction formula applies
-    to the four hours before and the four hours after it** — an 11-hour shaped window in
-    total (4 ramp + 3 peak + 4 ramp). Nothing in the codebase does this yet; no 3-hour
-    windowing exists in `stress_finder.py` or `metrics.py`, and `dispatch.py` currently
-    shapes output through `peak_weight`/`smooth_weight` rather than a located window.
-    Three things still needed before it can be built:
-    - **The wrap-around triplet.** (22,23,00) reads as circular within one calendar day, which
-      would make the last two triplets non-contiguous in time (hour 00 sits 22 hours before
-      hour 22, not after it). Either the triplets stop at (21,22,23) — 22 per day — or they
-      wrap into the **next** day's 00:00, which is the physically continuous reading and the
-      one to assume. Worth confirming, because on a multi-day event the wrap changes which
-      hours get shaved on the boundary between days.
+  - **Peak-window identification — built 2026-07-28, specified by Mitchell 2026-07-28 23:12.**
+    Once events are identified, each day in the window gets a **peak load defined as a 3-hour
+    period**, found by rolling window over hour triplets: (00,01,02), (01,02,03), …
+    (22,23,00). Sum the load in each triplet, compare triplets, take the maximum as the peak.
+    **Identification only is implemented** — `owr.peak_window.find_peak_window` /
+    `find_peak_window_for_day` / `find_peak_windows_over_days`, plus `PeakWindow` and
+    `WrapConvention` in `models.py`. It locates the window and returns it; **nothing applies a
+    formula to it.** The peak-shaving formula and the ramp-reduction formula (the 4-before /
+    4-after shaped window Mitchell also specified) are still not built, and `dispatch.py`
+    still shapes output through `peak_weight`/`smooth_weight` rather than a located window.
+    - **The wrap-around triplet is a labeled `Config` default, not a resolved decision.**
+      (22,23,00) reads as circular within one calendar day, which would make the last two
+      triplets non-contiguous in time (hour 00 sits 22 hours before hour 22, not after it).
+      `WrapConvention` has both readings — `STOP_AT_MIDNIGHT` (22 triplets/day) and
+      `WRAP_TO_NEXT_DAY` (23 triplets/day, wrapping into the next day's 00:00) —
+      `Config.default_peak_window_wrap` defaults to `WRAP_TO_NEXT_DAY` as the physically
+      continuous reading, and flipping it is a one-value change. On a multi-day event the
+      choice changes which hours get shaved at the day boundary. Still open; still worth
+      confirming with Mitchell.
     - **The peak-shaving formula itself** is not specified, only where it applies.
     - **The ramp-reduction formula** is likewise unspecified. Also unstated: what happens when
       two consecutive days' 11-hour windows overlap, which they will whenever peaks fall near
-      midnight, and whether the ramp hours are clipped or summed at the overlap.
+      midnight, and whether the ramp hours are clipped or summed at the overlap. Neither the
+      shaped 11-hour window nor either formula is built.
   - Open detail worth confirming: the 90th percentile is taken over **daily totals across the
     historical winter record** (all Dec–Feb days in the five-year set), not over hourly values
     and not per-winter. That is the reading being implemented.
@@ -410,7 +450,7 @@ carry dated pointers back to this block rather than being rewritten.
 ```bash
 cd ~/Desktop/offshore-wind-poc
 uv sync --group dev                                    # .venv, Python 3.12 + dev tools
-uv run pytest                                          # 152 passed, 3 skipped
+uv run pytest                                          # 231 passed, 3 skipped
 uv run ruff check .                                    # All checks passed
 uv run simulate --input examples/synthetic_winter_stress.csv \
   --storage-mwh 20000 --power-mw 2000                  # simulator CLI end to end
@@ -438,6 +478,8 @@ Postgres-backed store at runtime.
 | Data source registry | `docs/DATA_SOURCES.md` |
 | Job board snapshot | `docs/BOARD.md` |
 | Engine / API / ETL / simulator CLI | `src/owr/`, `src/owr/api/`, `src/owr/etl/`, `src/owr/cli.py` |
+| Sphere energy/power/geometry (pure, not wired up) | `src/owr/storage_physics.py` |
+| 3-hour rolling peak-window finder (identification only) | `src/owr/peak_window.py` |
 | Schema | `db/migrations/` |
 | Resume log (LOCAL ONLY, gitignored) | `RESUME_LOG.md` |
 

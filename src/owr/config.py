@@ -11,6 +11,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from owr.models import HOURS_PER_DAY, WrapConvention
+
 
 @dataclass(frozen=True)
 class Config:
@@ -51,19 +53,34 @@ class Config:
         protected floor).
 
     default_severity_percentile / default_min_stress_window_days
-        Stress-event detection parameters passed to ``stress_finder``: a day is
-        stressed when its daily energy sits at or above this percentile of the
-        series, and a run of this many consecutive stressed days is an event. OPEN
-        team question (stress_event_definition): three artifacts use three
-        thresholds and merge rules on the same January 2025 activity, and a
-        competing rule counts hours within the day (12+ hours above threshold =
-        stress day, 2+ consecutive = event). These are the shipped defaults of the
-        implemented rule, not a decision.
+        Stress-event detection parameters passed to ``stress_finder``. **Settled**
+        2026-07-28 (HANDOFF.md decision 2): a day is stressed when its daily total
+        demand sits at or above the historical 90th percentile of the series, and
+        a run of ``default_min_stress_window_days`` (2+) consecutive such days
+        forms an event. Report B's competing 12-hour rule (12+ hours above
+        threshold within a day) is retired. What remains open is the **threshold
+        value on real data**: both published numbers (3,504 and 16,750 MWh) are
+        hourly-basis and do not carry over to a daily-basis rule, so a fresh p90
+        must be computed on daily sums.
 
     default_peak_weight / default_smooth_weight
         Relative emphasis of peak shaving vs ramp smoothing in ``dispatch``. The
         Architecture doc names PeakWeight and SmoothWeight without fixing values.
         (Team design choice.)
+
+    default_peak_window_hours
+        **Settled** 2026-07-28: each day in a stress window gets a peak load
+        defined as a 3-hour period found by rolling window over hour triplets.
+        Surfaced as config because ``find_peak_window`` takes it as a parameter,
+        not because it is in doubt.
+
+    default_peak_window_wrap
+        OPEN team question (peak_window_wrap). Mitchell's enumeration ends at
+        (22,23,00). ``WrapConvention.WRAP_TO_NEXT_DAY`` is the physically
+        continuous reading and the one HANDOFF.md says to assume;
+        ``STOP_AT_MIDNIGHT`` is the 22-triplets alternative. On a multi-day event
+        the choice changes which hours get shaved at the day boundary. Flipping
+        the default is a one-value change.
     """
 
     priority_demand_weight: float = 0.7
@@ -72,10 +89,12 @@ class Config:
     default_efficiency: float = 1.0
     default_soc_floor_frac: float = 0.20
     default_strategic_reserve_frac: float = 0.10
-    default_severity_percentile: float = 0.95
+    default_severity_percentile: float = 0.90
     default_min_stress_window_days: int = 2
     default_peak_weight: float = 0.5
     default_smooth_weight: float = 0.5
+    default_peak_window_hours: int = 3
+    default_peak_window_wrap: WrapConvention = WrapConvention.WRAP_TO_NEXT_DAY
 
     def __post_init__(self) -> None:
         if abs((self.priority_demand_weight + self.priority_wind_weight) - 1.0) > 1e-9:
@@ -95,6 +114,8 @@ class Config:
             raise ValueError("default_peak_weight and default_smooth_weight must be >= 0")
         if self.default_peak_weight + self.default_smooth_weight <= 0:
             raise ValueError("default_peak_weight + default_smooth_weight must be > 0")
+        if not 1 <= self.default_peak_window_hours <= HOURS_PER_DAY:
+            raise ValueError(f"default_peak_window_hours must be in 1..{HOURS_PER_DAY}")
 
 
 DEFAULT_CONFIG = Config()

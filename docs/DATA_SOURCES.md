@@ -199,6 +199,12 @@ this study. It is a design assumption, not a product spec. Physics for the scena
 A specific candidate depth still needs a depth-vs-distance point from the bathymetry viewers
 in the reference table above before it anchors a siting scenario.
 
+**2026-07-28: this model is now executable**, in `src/owr/storage_physics.py`. The
+701–779 m depth band (recovering Fraunhofer's 20 MWh) and the 4.49–5.00 MWh shallow-variant
+band above are pinned as tests in `tests/test_storage_physics.py`, not just prose. The
+module takes efficiency as an explicit argument and ships no default, so it does not answer
+the round-trip-vs-one-way question below — it only makes both readings computable.
+
 ### Mitchell's 2026-07-28 spec for the shallow variant, and its arithmetic
 
 Supplied as "interpolated from the other prototypes", explicitly open to revision:
@@ -218,8 +224,10 @@ Using `P = ρ·g·Q·h·η` with ρ=1025 kg/m³, g=9.81 m/s²:
   For 1.67 MW at η=0.70, **Q = 1.186 m³/s**. Recommend keeping 1.67 MW and restating
   Q ≈ **1.19 m³/s**.
 - **Energy / geometry cannot both hold.** 20 MWh at h=200, η=0.70 needs **~51,100 m³** of
-  working volume — a **~46 m** sphere. A 30 m sphere is 14,137 m³ gross (11,494–12,770 m³
-  internal at a 0.5–1.0 m wall) → **4.5–5.0 MWh** at 200 m.
+  working volume — an internal diameter of **~46.05 m**, i.e. an **outer diameter of
+  ~47.05 m** at a 0.5 m wall (every other diameter in this section is an outer diameter; this
+  one was previously mislabeled the same way, corrected 2026-07-28). A 30 m sphere is
+  14,137 m³ gross (11,494–12,770 m³ internal at a 0.5–1.0 m wall) → **4.5–5.0 MWh** at 200 m.
   **The model is validated against Fraunhofer:** the same geometry puts 20 MWh at
   **701–779 m** (η=0.80), inside their published 600–800 m band, for any wall thickness in
   0.5–1.0 m. So the 20 MWh figure is the full-depth rating and the ~5 MWh shallow figure

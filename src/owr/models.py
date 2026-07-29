@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import date
+from enum import StrEnum
 
 HOURS_PER_DAY = 24
 
@@ -89,6 +90,56 @@ class StressWindow:
     start: date
     end: date
     days: int
+
+
+class WrapConvention(StrEnum):
+    """Which hour triplets a day gets when locating its peak window. OPEN team
+    question (peak_window_wrap): HANDOFF.md, Mitchell 2026-07-28 23:12. Mitchell's
+    enumeration ends at (22,23,00); whether that 00 is the next day's or the same
+    day's is unconfirmed.
+
+    ``StrEnum``, not a plain ``Enum``: ``cli.py`` does ``"config": asdict(cfg)``
+    then ``json.dumps``, and a plain ``Enum`` member is not JSON-serializable.
+    """
+
+    STOP_AT_MIDNIGHT = "stop_at_midnight"  # windows must fit inside the day: 22 triplets
+    WRAP_TO_NEXT_DAY = "wrap_to_next_day"  # last window is (22,23,next-day-00): 23 triplets
+
+    @property
+    def lookahead_hours(self) -> int:
+        """Hours of look-ahead into the next day this convention needs. 1 for
+        ``WRAP_TO_NEXT_DAY`` at any window size, matching Mitchell's enumeration,
+        which wraps by exactly one hour. A fully continuous reading (look-ahead
+        ``window_hours - 1``) is reachable through ``find_peak_window`` directly,
+        without touching this enum."""
+        return 1 if self is WrapConvention.WRAP_TO_NEXT_DAY else 0
+
+
+@dataclass(frozen=True)
+class PeakWindow:
+    """The highest-summing rolling window of consecutive hours in a day, found by
+    ``peak_window.find_peak_window``."""
+
+    start_hour: int  # 0..23, index into the day's own 24 hours
+    clock_hours: tuple[int, ...]  # (start_hour + k) % 24 for each hour, e.g. (22, 23, 0)
+    load_mw: tuple[float, ...]  # the loads summed, in order
+    wrapped: bool  # True when the window crosses into the next day
+    candidates_considered: int  # number of start positions evaluated
+
+    def __post_init__(self) -> None:
+        if not 0 <= self.start_hour <= 23:
+            raise ValueError("start_hour must be in 0..23")
+        if len(self.clock_hours) != len(self.load_mw):
+            raise ValueError("clock_hours and load_mw must be the same length")
+        if len(self.load_mw) < 1:
+            raise ValueError("load_mw must have at least one value")
+        if self.candidates_considered < 1:
+            raise ValueError("candidates_considered must be >= 1")
+
+    @property
+    def load_mwh(self) -> float:
+        """Total energy summed across the window (MWh), mirrors DayProfile.load_mwh."""
+        return sum(self.load_mw)
 
 
 @dataclass(frozen=True)

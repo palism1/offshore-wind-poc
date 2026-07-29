@@ -30,7 +30,7 @@ class ScenarioCreate(BaseModel):
     date_start: date
     date_end: date
     min_stress_window_days: int = Field(default=2, ge=1)
-    severity_percentile: float = Field(default=0.95, ge=0, le=1.0)
+    severity_percentile: float = Field(default=0.90, ge=0, le=1.0)
     transmission_limit_mw: float | None = None
     available_capacity_mw: float | None = None
     # dispatch emphasis (team design choices, surfaced not hard-coded)

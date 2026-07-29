@@ -166,6 +166,9 @@ Shape:
   `--min-stress-window-days 2` yields one 3-day window. Break the tie and a 0.95 percentile
   over six days selects at most one day: `--list-windows` prints an empty list and exits 0,
   and the flagship demo command goes quiet with no error to explain it.
+  Superseded 2026-07-28 — default is 0.90, not 0.95; see HANDOFF.md decision 2. The tie still
+  holds under 0.90 (p90 and p95 both interpolate to 216,000 MWh on this six-day series), so
+  the invariant described above is unaffected.
 - The file opens with `#` comment lines stating that it is synthetic and not ISO-NE data,
   and naming the generator.
 
@@ -278,7 +281,7 @@ for the provenance record in the JSON output.
 
 | Flag | Type | Default | Maps to |
 |---|---|---|---|
-| `--severity-percentile` | float | **cfg** `default_severity_percentile` = 0.95 | `find_stress_windows(severity_percentile=)` — **OPEN #2** |
+| `--severity-percentile` | float | **cfg** `default_severity_percentile` = 0.95 | `find_stress_windows(severity_percentile=)` — **OPEN #2**. Superseded 2026-07-28 — default is 0.90; see HANDOFF.md decision 2. |
 | `--min-stress-window-days` | int | **cfg** `default_min_stress_window_days` = 2 | `find_stress_windows(min_window_days=)` — **OPEN #2** |
 | `--window` | `all` or 1-based int | `all` | which detected window to simulate |
 | `--lead-days` | int ≥ 0 | `0` | days fed to `initial_soc.charge_from_wind` |
@@ -358,7 +361,7 @@ carries an `open_questions` array with these stable ids.
 | id | Flags | Default | Note the CLI prints |
 |---|---|---|---|
 | `round_trip_efficiency` | `--efficiency` | 1.0 | `config.py` ships 1.0; Report B computed everything at 0.85. At 1.0 the engine understates required charging energy by 17.6%. The storage pivot makes efficiency the axis candidate technologies differ on (StEnSea 0.80, LAES 0.50–0.70, thermal ~0.35). Undecided. |
-| `stress_event_definition` | `--severity-percentile`, `--min-stress-window-days` | 0.95, 2 | The implemented rule is daily energy at or above a percentile of the series, with runs of N consecutive days forming an event. A competing rule counts hours within the day (12+ hours above threshold = stress day, 2+ consecutive = event). Three artifacts use three rules on the same January 2025 activity. Undecided. |
+| `stress_event_definition` | `--severity-percentile`, `--min-stress-window-days` | 0.95, 2 | The implemented rule is daily energy at or above a percentile of the series, with runs of N consecutive days forming an event. A competing rule counts hours within the day (12+ hours above threshold = stress day, 2+ consecutive = event). Three artifacts use three rules on the same January 2025 activity. Undecided. Superseded 2026-07-28 — default is 0.90 and the 12-hour rule is retired; see HANDOFF.md decision 2. |
 | `reserve_usage_rules` | `--soc-floor-frac`, `--strategic-reserve-frac` | 0.20, 0.10 | The 20% floor and 10% strategic reserve are modeled as two fractions summed into one protected floor. When each may be drawn is open since 2026-07-18. |
 | `cycles_per_year` | `--cycles-per-year` | unset | Identified 2026-07-28 as the variable the storage siting trade-off turns on and left unspecified. At ~10 cycles/yr capex dominates; at ~200 the efficiency case returns. The engine does not consume it, so its default is a labeled constant in `cli.py` rather than a `Config` field. |
 
@@ -422,7 +425,7 @@ All computed from what `simulate()` returns. No new engine code.
 | `min_soc_mwh` | `asset.min_soc_mwh` |
 | `energy_discharged_mwh` | sum of `HourlyResult.discharge` over every hour (energy delivered to the grid) |
 | `energy_charged_mwh` | sum of `HourlyResult.charge` over every hour |
-| `equivalent_full_cycles` | `(energy_discharged_mwh / efficiency) / total_mwh` — energy drawn from the tank over rated capacity. Equals `energy_discharged_mwh / total_mwh` at the default efficiency of 1.0. Label the definition in the output. |
+| `equivalent_full_cycles` | `(energy_discharged_mwh / efficiency) / total_mwh` — energy drawn from the tank over rated capacity. Equals `energy_discharged_mwh / total_mwh` at the default efficiency of 1.0. Label the definition in the output. Superseded 2026-07-28 — see HANDOFF.md decision 5; EFC is energy discharged / rated capacity. |
 | `window_share_of_annual_cycles` | `equivalent_full_cycles / cycles_per_year`, or `null` when `--cycles-per-year` is unset |
 | `min_capacity_margin_mw` | minimum non-`None` `HourlyResult.capacity_margin`, with the date and hour where it occurs; `null` when `--available-capacity-mw` is unset |
 
@@ -486,6 +489,12 @@ Open team questions carried by this run
   reserve_usage_rules      used 0.200 + 0.100  — <note text>
   cycles_per_year          unset  — <note text>
 ```
+
+Superseded 2026-07-28 — this transcript is illustrative only and is now stale in two ways
+(see HANDOFF.md decisions 2 and 5): a real run prints `rule: daily energy >= 0.900
+percentile...` and `stress_event_definition  used 0.900 / 2 days` (default moved 0.95 → 0.90),
+and the `equivalent full cycles` line reads `(energy discharged / rated capacity)`, not
+`(energy drawn / rated capacity)` — the divide-by-efficiency formula was retired.
 
 Omit the pre-event charging section when there are no lead days. Omit the min capacity
 margin line when `--available-capacity-mw` is unset.
@@ -561,7 +570,7 @@ Add to `Config`, all with defaults so existing construction sites keep working
 
 | Field | Type | Default |
 |---|---|---|
-| `default_severity_percentile` | `float` | `0.95` |
+| `default_severity_percentile` | `float` | `0.95`. Superseded 2026-07-28 — default is `0.90`; see HANDOFF.md decision 2. |
 | `default_min_stress_window_days` | `int` | `2` |
 | `default_peak_weight` | `float` | `0.5` |
 | `default_smooth_weight` | `float` | `0.5` |

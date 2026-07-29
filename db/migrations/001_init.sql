@@ -103,7 +103,7 @@ CREATE TABLE app.scenario (
     date_start            DATE NOT NULL,
     date_end              DATE NOT NULL,
     min_stress_window_days INTEGER NOT NULL DEFAULT 2,
-    severity_percentile   DOUBLE PRECISION NOT NULL,              -- e.g. 0.95
+    severity_percentile   DOUBLE PRECISION NOT NULL,              -- e.g. 0.90
     transmission_limit_mw  DOUBLE PRECISION,                      -- NULL = no limit (Goal B/C)
     created_at            TIMESTAMPTZ NOT NULL DEFAULT now()
 );
