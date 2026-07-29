@@ -109,14 +109,18 @@ Remaining checklist from `docs/PROJECT_STATE_2026-07-28.md`, in order:
 and raised the impact-target question himself, which is the threshold half of 7. Nothing is
 decided yet; these move from "unowned" to "with Mitchell", no further.
 
-1. **Round-trip efficiency default.** `config.py` ships 1.0; Report B computed everything at
-   0.85. At 1.0 the engine understates required charging energy by 17.6%. Recommend 0.85.
-   The storage pivot upgrades this — efficiency is now the axis the candidate technologies
-   differ on (StEnSea 0.80, LAES 0.50–0.70, thermal ~0.35), so it should become a
-   first-class scenario input.
-2. **One canonical stress-event definition.** Three artifacts use three different thresholds
-   and merge rules on the same January 2025 activity. Recommend Report B's rule (12+ hours
-   above threshold = stress day, 2+ consecutive = event). Blocks `stress_finder`.
+1. ~~**Round-trip efficiency default.**~~ **RESOLVED 2026-07-28 by Mitchell: 0.70.** See the
+   third-reply block below. `config.py` still ships 1.0 — flipping the default to 0.70 is a
+   pending one-line code change. The 0.85 that had been recommended here was never a StEnSea
+   figure: it is Report B Finding 2.2's assumption (`NE_Stage1_Stage2_Findings.pdf`), which
+   computed every charging gap at 85% round-trip. Mitchell is right that no StEnSea prototype
+   claims above 0.80. Efficiency still becomes a first-class scenario input — it is the axis
+   the candidate technologies differ on (StEnSea 0.70–0.80, LAES 0.50–0.70, thermal ~0.35).
+2. ~~**One canonical stress-event definition.**~~ **RESOLVED 2026-07-28 by Mitchell.** A stress
+   event is a run of **2+ consecutive days** (minimum stress window is a user parameter) whose
+   **daily total demand** sits above the **historical 90th-percentile** threshold. There is no
+   hours-above-an-hourly-threshold criterion in event identification. Report B's "12+ hours
+   above threshold = stress day" rule is **retired**. Details and the code delta below.
 3. **Is charged wind priced at opportunity cost?** Report A found zero hours of negative net
    load, so no free wind exists. Recommend yes. Largest correctness gap in the model.
 4. **Reserve usage rules** — when the 10% strategic reserve and the 20% floor may each be
@@ -225,6 +229,84 @@ carry dated pointers back to this block rather than being rewritten.
   it matches EIA. Two flags recorded in `DATA_SOURCES.md` open decision 2: that report is
   **daily** while charging needs hourly wind, and the ISO-NE-vs-EIA values are unreconciled.
   Full spec table in `DATA_SOURCES.md` [3].
+
+**Clarifications received, 2026-07-28 (Mitchell's third reply):**
+
+- **Sphere spec, interpolated from the other prototypes.** Mitchell supplied: power
+  **1.67 MW** (33.33% of 5 MW), energy **20 MWh**, outer diameter **30 m**, efficiency
+  **0.70**, hydraulic head **200 m**, flow rate **~1.02 m³/s**. Checked against
+  `P = ρ·g·Q·h·η` (ρ=1025, g=9.81) — **three of the six numbers cannot hold at once.** Two
+  independent inconsistencies:
+  1. *Power vs. flow vs. efficiency.* At Q=1.02 m³/s, h=200 m, η=0.70 the formula gives
+     **1.436 MW**, not 1.67. The 1.67 MW figure implies **η≈0.814**, which is the full-scale
+     machine's efficiency, not the 0.70 being adopted — 1.02 m³/s is exactly the flow of a
+     5 MW / 600 m / η≈0.81 machine, so it was carried over unchanged while power was scaled
+     by the head ratio and efficiency was separately revised. Pick one:
+     **1.67 MW → Q = 1.186 m³/s**, or **Q = 1.02 m³/s → 1.44 MW**. Recommend holding
+     1.67 MW (the 5 MW × 200/600 scaling is the deliberate choice) and restating Q as
+     **~1.19 m³/s**.
+  2. *Energy vs. geometry.* 20 MWh at h=200 m, η=0.70 requires a working volume of
+     **~51,100 m³** — a sphere of **~46 m** outer diameter. A 30 m sphere holds 14,137 m³
+     gross (~11,500–12,100 m³ internal at a 0.75–1.0 m wall), which at 200 m and 0.70 yields
+     **4.5–5.5 MWh**. The 20 MWh figure is the *full-depth* rating: the same 30 m sphere at
+     600–800 m and η=0.80 gives 15–21 MWh, which is where Fraunhofer's 20 MWh comes from.
+     Energy scales ~linearly with head, so keeping 30 m and 200 m forces **~5 MWh/sphere**,
+     consistent with the 5.7–6.7 MWh/unit already in `PROJECT_STATE` Tier 5.
+  This is not a rounding quarrel — it changes the asset's duration from **12 h**
+  (20 MWh ÷ 1.67 MW) to **~3 h** (5 MWh ÷ 1.67 MW), and a 3-hour asset behaves very
+  differently against a multi-day stress event than a 12-hour one. Resolve by choosing which
+  two of {diameter, head, energy} are fixed and letting the third follow. Until Mitchell
+  picks, the modeling default is 30 m + 200 m + ~5 MWh, and the **sphere count for a
+  40,000–60,000 MWh system reserve rises from ~2,000–3,000 to ~8,000–12,000.**
+- **Charge-rate formula confirmed:** `Power = ρ_seawater · g · Q · h · η`, or with everything
+  else held constant `5 MW × (200/600)`. Adopted. One note for `dispatch.py`: that is the
+  *generating* (discharge) form. Pumping is `P_pump = ρ·g·Q·h / η_pump`, so charge and
+  discharge power are not the same number at the same flow. If 0.70 is the **round-trip**
+  figure, the conventional split is √0.70 ≈ 0.837 each way; if it is the one-way turbine
+  figure, round-trip is ~0.49. Which one 0.70 is needs saying before it lands in `config.py`.
+- **"Report A" and "Report B"** are shorthand from `FINDINGS_REVIEW_2026-07-24.md`:
+  Report A = `NE_Wind_Reserve_Findings_v2.pdf`, Report B = `NE_Stage1_Stage2_Findings.pdf`.
+  The labels exist only because the two disagree with each other; they are not team documents.
+- **Stress-event definition (decision 2) — resolved.** Event identification uses **daily
+  total demand** against the **historical 90th percentile**, with a run of **2+ consecutive**
+  such days (minimum window user-configurable) forming an event. Hourly counting plays no part
+  in identification. The **implemented `stress_finder` already matches this exactly** — it
+  thresholds daily energy against a percentile of the series and requires
+  `min_stress_window_days` consecutive days. The only code delta is
+  **`default_severity_percentile: 0.95 → 0.90`** in `config.py`, plus removing the "competing
+  12-hour rule" language from that docstring and from decision 2. The 3-artifact
+  disagreement is closed.
+  - **New, separate step:** once events are identified, each day in the window gets a **peak
+    load defined as a 3-hour period**. Nothing in the codebase does this yet — no 3-hour
+    windowing exists in `stress_finder.py` or `metrics.py`. Two things still need saying:
+    whether the 3-hour window is the maximum-load rolling 3 hours per day (assumed) and
+    whether it drives dispatch or only reporting.
+  - Open detail worth confirming: the 90th percentile is taken over **daily totals across the
+    historical winter record** (all Dec–Feb days in the five-year set), not over hourly values
+    and not per-winter. That is the reading being implemented.
+- **MVP v1.0 data scope: five winters, 2021/22 through 2025/26, December 1 – February 28/29.**
+  March 1 – August 31 is optional and not needed until later versions.
+  - **This does not match Alexander's pull.** His spec is months Jan/Feb/Mar/Jun/Jul across
+    2022–2026, which covers all five Jan/Feb pairs but **contains no December at all**. Five
+    files are missing: `whlsecost_hourly_4000_202112.csv`, `...202212`, `...202312`,
+    `...202412`, `...202512`. Same endpoint, same locationId — a five-file top-up, not a
+    re-pull. Without them every winter in the study is missing its first month, and December
+    carries real cold-snap events.
+  - Alexander's Mar/Jun/Jul files are the optional summer extension; keep them, do not gate
+    v1.0 on them.
+- **Hourly wind source: EIA `electricity/rto/fuel-type-data`** (EIA-930 hourly generation by
+  fuel type; ISO-NE respondent, `WND` fuel type). This **resolves the daily-vs-hourly flag**
+  raised against Alexander's ISO-NE `daily-gen-fuel-type` choice — charging needs hourly wind
+  and this series provides it. Two practical notes: the EIA v2 API **requires a free API key**
+  (verified — an unkeyed request returns `API_KEY_MISSING`), unlike the ISO Express CSV
+  endpoint which needs none, so this is the project's first credentialed source; and the
+  ISO-NE-vs-EIA reconciliation Alexander flagged is now directly testable, since both report
+  the same ISO-NE wind fleet. Recorded in `DATA_SOURCES.md`.
+- **Transmission.** Mitchell agrees tens of miles for a single hub is a materially smaller
+  problem than 160–215 miles per individual wind farm, but transmission loss and cost still
+  have to be modeled for any wind routed to the hub — the shorter distance reduces the term,
+  it does not remove it. Depth-vs-distance curve agreed as needed (see the bathymetry bullet
+  above); it is now wanted for the transmission case as well as the siting case.
 
 **Assumptions that may be wrong:**
 
