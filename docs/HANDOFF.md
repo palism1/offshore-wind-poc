@@ -285,15 +285,22 @@ carry dated pointers back to this block rather than being rewritten.
     historical winter record** (all Dec–Feb days in the five-year set), not over hourly values
     and not per-winter. That is the reading being implemented.
 - **MVP v1.0 data scope: five winters, 2021/22 through 2025/26, December 1 – February 28/29.**
-  March 1 – August 31 is optional and not needed until later versions.
+  Summer is deferred past v1.0.
+  - **Season definitions are now fixed:** **winter = Dec 1 – Feb 28/29**, **summer =
+    Jun 1 – Sep 30**. March falls in neither and is a shoulder month — usable as data, but it
+    belongs to no study window and must not be pooled into a seasonal denominator. This
+    matters for the two seasonal denominators (561,878 MWh summer / 434,214 MWh winter) that
+    `PLAN.md` says to derive during ETL: they now have month boundaries to derive against.
   - **This does not match Alexander's pull.** His spec is months Jan/Feb/Mar/Jun/Jul across
     2022–2026, which covers all five Jan/Feb pairs but **contains no December at all**. Five
     files are missing: `whlsecost_hourly_4000_202112.csv`, `...202212`, `...202312`,
     `...202412`, `...202512`. Same endpoint, same locationId — a five-file top-up, not a
     re-pull. Without them every winter in the study is missing its first month, and December
     carries real cold-snap events.
-  - Alexander's Mar/Jun/Jul files are the optional summer extension; keep them, do not gate
-    v1.0 on them.
+  - **Summer is short by two months per year, whenever it is picked up.** Jun 1 – Sep 30 needs
+    August and September; Alexander has Jun/Jul only. Ten more files (`...YYYY08`, `...YYYY09`
+    across 2022–2026). Not blocking — summer is post-v1.0 — but the current Jun/Jul files are
+    half a season, not a season, and should not be described as summer coverage.
 - **Hourly wind source: EIA `electricity/rto/fuel-type-data`** (EIA-930 hourly generation by
   fuel type; ISO-NE respondent, `WND` fuel type). This **resolves the daily-vs-hourly flag**
   raised against Alexander's ISO-NE `daily-gen-fuel-type` choice — charging needs hourly wind
@@ -315,7 +322,14 @@ carry dated pointers back to this block rather than being rewritten.
   drives a decision.
 - Seasonal denominators (561,878 MWh summer / 434,214 MWh winter) remain underivable from
   available artifacts. Do not hard-code; derive during ETL and store in `features.constants`
-  with the query.
+  with the query. **Mitchell's 2026-07-28 season definitions (winter Dec 1 – Feb 28/29,
+  summer Jun 1 – Sep 30) give the derivation its month boundaries** — the seasonal peak day
+  is now selected from a defined candidate set instead of an assumed one. Per
+  `FACT_CHECK_REPORT.md` these are **peak-day** total energies, not season totals:
+  434,214 MWh ÷ 24 h = 18.1 GW and 561,878 ÷ 24 = 23.4 GW average across the day. Those are
+  **ISO-NE system scale** (system winter peak ~19–20 GW, summer record ~28.1 GW), not NEMA
+  (~3.8–4.0 GW). So they are consistent with the scope reversal to system-wide — one of the
+  few figures that did not need rescaling. Still derive rather than hard-code.
 - The shallow-StEnSea depth and efficiency Mitchell will send are a design estimate, not a
   primary source. The efficiency band above is defensible from Fraunhofer's full-scale figure
   but the specific candidate depth still needs checking against published bathymetry under

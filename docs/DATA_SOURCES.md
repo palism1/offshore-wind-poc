@@ -86,9 +86,15 @@ decisions 1 and 3 remain open.
    pair but **contains no December**. Five files are needed on the same endpoint and
    `locationId`: `whlsecost_hourly_4000_202112.csv`, `...202212.csv`, `...202312.csv`,
    `...202412.csv`, `...202512.csv`. A top-up, not a re-pull. Without them each winter in the
-   study loses its first month, including December cold snaps. Mar/Jun/Jul are the optional
-   summer extension (Mitchell: "March 1st to August 31st [is] up to you, we don't need to
-   check summer until later versions") — keep them, do not gate v1.0 on them.
+   study loses its first month, including December cold snaps.
+
+   **Season definitions (Mitchell, 2026-07-28):** winter is **December 1 – February 28/29**,
+   summer is **June 1 – September 30**. Summer is deferred past v1.0 ("we don't need to check
+   summer until later versions"), so it gates nothing — but the pull is short there too:
+   Alexander has **Jun/Jul only**, missing **August and September** in every year. That is ten
+   more files when summer is picked up (`whlsecost_hourly_4000_YYYY08.csv` and `...YYYY09.csv`
+   across 2022–2026). March belongs to neither season. Keep the March files, but they sit in
+   no defined study window and must not be pooled into either seasonal denominator.
 
 Until each is decided, treat the `candidate` source as provisional and do not hard-code it
 as the canonical input.
@@ -143,7 +149,7 @@ of New England (ISO-NE system-wide), not NEMA/Boston. The 17,395-hour series abo
 | Months | January, February, March, June, July — **plus December, added by Mitchell's 2026-07-28 scope; see open decision 3** |
 | Years | 2022–2026 (December files are 2021–2025) |
 | Wind generation | ISO-NE Daily Generation by Fuel Type ("i do not know if its same with the EIA data") — **superseded 2026-07-28 by EIA hourly `electricity/rto/fuel-type-data`; the ISO-NE daily report stays as the reconciliation reference** |
-| Study window | **Dec 1 – Feb 28/29, winters 2021/22 → 2025/26** (Mitchell, MVP v1.0). Mar–Aug optional, deferred past v1.0 |
+| Study window | **Winter = Dec 1 – Feb 28/29**, five winters 2021/22 → 2025/26 (Mitchell, MVP v1.0). **Summer = Jun 1 – Sep 30**, deferred past v1.0. March belongs to neither season |
 
 Same report tree and endpoint as the NEMA pull — no new source, no credentials — only the
 `locationId` changes, so the ETL should be parameterized on it and run both scopes from one
