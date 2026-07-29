@@ -146,10 +146,26 @@ of New England (ISO-NE system-wide), not NEMA/Boston. The 17,395-hour series abo
 | CSV endpoint | `/transform/csv/whlsecost/hourly?month=YYYYMM&locationId=4000` |
 | File pattern | `whlsecost_hourly_4000_YYYYMM.csv` |
 | Location ID | **4000 (New England system-wide)**; 4008 is NEMA/Boston zone only |
-| Months | January, February, March, June, July — **plus December, added by Mitchell's 2026-07-28 scope; see open decision 3** |
-| Years | 2022–2026 (December files are 2021–2025) |
-| Wind generation | ISO-NE Daily Generation by Fuel Type ("i do not know if its same with the EIA data") — **superseded 2026-07-28 by EIA hourly `electricity/rto/fuel-type-data`; the ISO-NE daily report stays as the reconciliation reference** |
-| Study window | **Winter = Dec 1 – Feb 28/29**, five winters 2021/22 → 2025/26 (Mitchell, MVP v1.0). **Summer = Jun 1 – Sep 30**, deferred past v1.0. March belongs to neither season |
+| Months | January, February, March, June, July |
+| Years | 2022–2026 |
+| Scope | "We are using the entire NE and not NEMA/Boston" |
+| Wind generation | ISO-NE Daily Generation by Fuel Type, https://www.iso-ne.com/isoexpress/web/reports/operations/-/tree/daily-gen-fuel-type ("i do not know if its same with the EIA data") |
+
+**Confirmed as recorded, 2026-07-28 (Alexander).** The table above is Alexander's spec as
+given and is not edited. Two rows were **later changed by Mitchell**, and those changes are
+Mitchell's rather than Alexander's:
+
+| Row | Alexander's spec | Superseded by Mitchell, 2026-07-28 | Why |
+|---|---|---|---|
+| Months | Jan, Feb, Mar, Jun, Jul (2022–2026) | **add December** (2021–2025) | Winter is defined as Dec 1 – Feb 28/29, so every winter in the study needs its December. Five extra files on the same endpoint and `locationId`: `whlsecost_hourly_4000_202112.csv` … `...202512.csv`. Nothing about the load/LMP pull itself changes |
+| Wind generation | ISO-NE Daily Generation by Fuel Type | **EIA `electricity/rto/fuel-type-data`** (EIA-930 hourly, `respondent=ISNE`, `fueltype=WND`) | The ISO-NE report is **daily**; charging targets the highest-wind-speed *hours*, which a daily total cannot resolve. Alexander's own "i do not know if its same with the EIA data" is now directly testable — the ISO-NE daily report stays as the reconciliation reference, so it is still doing work. Note the EIA v2 API needs a free registered key; ISO Express needs none |
+
+Everything else in Alexander's spec stands unchanged: portal, report tree, CSV endpoint, file
+pattern, location ID, and the New England scope, which he confirmed independently of Mitchell.
+
+**Season definitions (Mitchell, 2026-07-28):** winter = **Dec 1 – Feb 28/29**, five winters
+2021/22 → 2025/26 for MVP v1.0. Summer = **Jun 1 – Sep 30**, deferred past v1.0 and short by
+August and September in the current pull. March belongs to neither season.
 
 Same report tree and endpoint as the NEMA pull — no new source, no credentials — only the
 `locationId` changes, so the ETL should be parameterized on it and run both scopes from one
