@@ -11,7 +11,7 @@ is half-finished. The simulator CLI (`simulate`, also runnable as `python -m owr
 day-profile CSV and drives the engine loop end to end — the demoable v1.0 the team decided
 on 2026-07-23.
 
-This session (2026-07-28, second half) landed four independent, **uncommitted** work items
+This session (2026-07-28, second half) landed four independent work items
 against `docs/PLAN_STORAGE_PHYSICS_PEAK_WINDOW.md`: `storage_physics.py` (sphere physics,
 not wired up), the 3-hour peak-window finder (identification only), the `equivalent_full_cycles`
 metric consolidated into `metrics.py`, and `default_severity_percentile` moving 0.95 → 0.90.
@@ -29,9 +29,9 @@ ISO-NE 21-day page we cite is a generator fuel-supply report and supports the fo
 
 ## What works, verified
 
-`main` was last verified at commit `17bdb9c` with 152 passed, 3 skipped, ruff clean, clean
-working tree, 0 unpushed. The current, **uncommitted** working tree (storage physics +
-peak-window + EFC + p90 default) was verified 2026-07-28:
+`main` was last verified with 152 passed, 3 skipped, ruff clean. Branch
+`storage-physics-peak-window` (storage physics + peak-window + EFC + p90 default) was
+verified 2026-07-28 and again independently by the orchestrator:
 
 | Check | Command | Result |
 |---|---|---|
@@ -39,7 +39,7 @@ peak-window + EFC + p90 default) was verified 2026-07-28:
 | Lint | `uv run ruff check .` | **All checks passed** |
 | Demo command | `uv run simulate --input examples/synthetic_winter_stress.csv --storage-mwh 20000 --power-mw 2000` | unchanged output shape; `--format json` still serializes (`WrapConvention` is `StrEnum`) |
 | CSV tie invariant | `uv run python examples/make_synthetic_winter_stress.py` then `git diff --exit-code examples/synthetic_winter_stress.csv` | byte-identical — p90 and p95 both land on 216,000 MWh on this series |
-| Working tree | `git status --short` | **dirty** — not committed, see "What is in flight" |
+| Working tree | `git status --short` | clean — work is on branch `storage-physics-peak-window` |
 
 | Phase | Scope | State |
 |---|---|---|
@@ -69,8 +69,9 @@ Every commit SHA changed. Consequences:
 
 ## What is in flight
 
-**Uncommitted, not pushed.** `docs/PLAN_STORAGE_PHYSICS_PEAK_WINDOW.md`, implemented and
-verified (231 passed, 3 skipped; ruff clean) but not yet committed:
+**On branch `storage-physics-peak-window`, commit `024825d`. Not merged, not pushed.**
+`docs/PLAN_STORAGE_PHYSICS_PEAK_WINDOW.md`, implemented and verified (231 passed,
+3 skipped; ruff clean). `main` is unchanged at `b43fd9d`+doc commits:
 
 - New: `src/owr/storage_physics.py`, `src/owr/peak_window.py`,
   `tests/test_storage_physics.py`, `tests/test_peak_window.py`.
