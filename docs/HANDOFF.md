@@ -136,6 +136,31 @@ decided yet; these move from "unowned" to "with Mitchell", no further.
    is the siting trade-off, where the same figure decides whether the near-shore efficiency
    argument holds. Both halves need the answer; whoever supplies it should know it is
    answering two questions.
+
+   **Mitchell asked 2026-07-28: is a cycle the recharge/dispatch within a single event window,
+   or the number of total events?** Neither, quite — the metric that survives partial cycles
+   is **equivalent full cycles (EFC): total MWh discharged in a year ÷ rated energy capacity.**
+   A cycle is one full charge→discharge round trip of the asset's energy capacity, so an event
+   that discharges half the stock and recharges mid-event counts as a fraction, and one event
+   can contain more than one cycle if wind allows a mid-event recharge. EFC handles both
+   without a convention argument, and it is what degradation and warranty terms are quoted
+   against. Events per year sets the floor; EFC is the number the payback math needs.
+
+   **The order of magnitude is the finding.** Under Report B's counts — 19 events over five
+   years, of which only **3 are winter** — a winter-reliability asset runs **~0.6 cycles/yr**
+   and an all-season one **~3.8 cycles/yr**. Even the all-season figure is far below the ~10
+   cycles/yr at which capex already dominates, and nowhere near the ~200 where the efficiency
+   argument returns. Over a 30-year life that is ~18–114 cycles total. Two consequences:
+   - **Payback on fuel savings alone is very unlikely to close** at this duty. The value has
+     to come from the event-time price spread (the $443/MWh Event 17 case), capacity/reliability
+     payments, or a second duty cycle such as summer peaking or price arbitrage. Whoever owns
+     decision 7 should know this before building the formula.
+   - **The siting trade-off collapses toward capex.** At <5 cycles/yr the round-trip-efficiency
+     difference between near-shore and deep-water siting is worth very little per year, so
+     transmission and installation cost dominate the comparison in `STORAGE_SITING_TRADEOFF.md`.
+   Caveat: these counts are Report B's, computed at NEMA scale under the retired hourly
+   threshold and without December or August–September. The count will change; the order of
+   magnitude — single-digit cycles per year — is unlikely to.
 6. **Does "Scenario Robustness Score" replace "Decision Confidence"?** Unconfirmed.
 7. **Who owns the capex/payback formula?** Offered to the channel 2026-07-23, unclaimed.
    Thresholds assigned to Alexander, still undefined. Mitchell raised the impact-target
@@ -278,11 +303,26 @@ carry dated pointers back to this block rather than being rewritten.
   **`default_severity_percentile: 0.95 → 0.90`** in `config.py`, plus removing the "competing
   12-hour rule" language from that docstring and from decision 2. The 3-artifact
   disagreement is closed.
-  - **New, separate step:** once events are identified, each day in the window gets a **peak
-    load defined as a 3-hour period**. Nothing in the codebase does this yet — no 3-hour
-    windowing exists in `stress_finder.py` or `metrics.py`. Two things still need saying:
-    whether the 3-hour window is the maximum-load rolling 3 hours per day (assumed) and
-    whether it drives dispatch or only reporting.
+  - **New, separate step — specified by Mitchell 2026-07-28 23:12.** Once events are
+    identified, each day in the window gets a **peak load defined as a 3-hour period**, found
+    by rolling window over hour triplets: (00,01,02), (01,02,03), … (22,23,00). Sum the load
+    in each triplet, compare triplets, take the maximum as the peak. **It drives dispatch:**
+    the peak-shaving formula applies to that triplet, and a **ramp-reduction formula applies
+    to the four hours before and the four hours after it** — an 11-hour shaped window in
+    total (4 ramp + 3 peak + 4 ramp). Nothing in the codebase does this yet; no 3-hour
+    windowing exists in `stress_finder.py` or `metrics.py`, and `dispatch.py` currently
+    shapes output through `peak_weight`/`smooth_weight` rather than a located window.
+    Three things still needed before it can be built:
+    - **The wrap-around triplet.** (22,23,00) reads as circular within one calendar day, which
+      would make the last two triplets non-contiguous in time (hour 00 sits 22 hours before
+      hour 22, not after it). Either the triplets stop at (21,22,23) — 22 per day — or they
+      wrap into the **next** day's 00:00, which is the physically continuous reading and the
+      one to assume. Worth confirming, because on a multi-day event the wrap changes which
+      hours get shaved on the boundary between days.
+    - **The peak-shaving formula itself** is not specified, only where it applies.
+    - **The ramp-reduction formula** is likewise unspecified. Also unstated: what happens when
+      two consecutive days' 11-hour windows overlap, which they will whenever peaks fall near
+      midnight, and whether the ramp hours are clipped or summed at the overlap.
   - Open detail worth confirming: the 90th percentile is taken over **daily totals across the
     historical winter record** (all Dec–Feb days in the five-year set), not over hourly values
     and not per-winter. That is the reading being implemented.
