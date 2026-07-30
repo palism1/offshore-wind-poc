@@ -91,8 +91,18 @@ class FakeLoadSource:
 
 def _obs() -> list[LoadObservation]:
     return [
-        LoadObservation(ts=datetime(2026, 1, 10, 0, tzinfo=UTC), zone="ISONE", load_mw=8000.0),
-        LoadObservation(ts=datetime(2026, 1, 10, 1, tzinfo=UTC), zone="ISONE", load_mw=7900.0),
+        LoadObservation(
+            ts=datetime(2026, 1, 10, 0, tzinfo=UTC),
+            zone="ISONE",
+            load_mw=8000.0,
+            interval_minutes=5.0,
+        ),
+        LoadObservation(
+            ts=datetime(2026, 1, 10, 1, tzinfo=UTC),
+            zone="ISONE",
+            load_mw=7900.0,
+            interval_minutes=5.0,
+        ),
     ]
 
 
@@ -138,12 +148,14 @@ def test_build_rows_stamps_provenance_on_every_row():
     prov = _prov()
     rows = build_rows(HOURLY_LOAD, _obs(), prov)
     assert len(rows) == 2
-    # columns: ts, zone, load_mw, source, retrieved_at, source_query, dataset_version
+    # columns: ts, zone, load_mw, interval_minutes, source, retrieved_at,
+    # source_query, dataset_version
     for row, obs in zip(rows, _obs(), strict=True):
         assert row == (
             obs.ts,
             "ISONE",
             obs.load_mw,
+            obs.interval_minutes,
             prov.source,
             prov.retrieved_at,
             prov.source_query,
@@ -180,13 +192,14 @@ def test_build_rows_empty_observations_is_empty():
 
 def test_upsert_sql_is_idempotent_on_conflict_key():
     sql = build_upsert_sql(HOURLY_LOAD)
-    assert "INSERT INTO raw.hourly_load" in sql
+    assert "INSERT INTO raw.system_load" in sql
     assert "ON CONFLICT (source, zone, ts)" in sql
     assert "DO UPDATE SET" in sql
     # key columns are never in the SET clause; value + provenance columns are updated
     assert "source = EXCLUDED.source" not in sql
     assert "ts = EXCLUDED.ts" not in sql
     assert "load_mw = EXCLUDED.load_mw" in sql
+    assert "interval_minutes = EXCLUDED.interval_minutes" in sql
     assert "retrieved_at = EXCLUDED.retrieved_at" in sql
 
 
@@ -241,19 +254,48 @@ class FakeTimestamp:
 
 def test_load_records_normalize_with_column_aliases():
     ts = datetime(2026, 1, 10, 5, tzinfo=UTC)
+    end = datetime(2026, 1, 10, 5, 5, tzinfo=UTC)
     records = [
-        {"Interval Start": ts, "Load": 8123.4},
-        {"Time": ts, "load_mw": 7000},  # alternate aliases + int coerced to float
+        {"Interval Start": ts, "Interval End": end, "Load": 8123.4},
+        # alternate aliases + int coerced to float
+        {"Time": ts, "Interval End": end, "load_mw": 7000},
     ]
     obs = load_observations_from_records(records, zone="ISONE")
-    assert obs[0] == LoadObservation(ts=ts, zone="ISONE", load_mw=8123.4)
+    assert obs[0] == LoadObservation(ts=ts, zone="ISONE", load_mw=8123.4, interval_minutes=5.0)
     assert obs[1].load_mw == 7000.0
+    assert obs[1].interval_minutes == 5.0
 
 
 def test_load_records_accept_pandas_like_timestamp():
     ts = datetime(2026, 1, 10, 6, tzinfo=UTC)
-    obs = load_observations_from_records([{"Time": FakeTimestamp(ts), "Load": 5.0}], "ISONE")
+    end = datetime(2026, 1, 10, 7, tzinfo=UTC)
+    obs = load_observations_from_records(
+        [{"Time": FakeTimestamp(ts), "Interval End": FakeTimestamp(end), "Load": 5.0}], "ISONE"
+    )
     assert obs[0].ts == ts
+    assert obs[0].interval_minutes == 60.0
+
+
+def test_load_records_interval_minutes_from_explicit_key():
+    ts = datetime(2026, 1, 10, 8, tzinfo=UTC)
+    obs = load_observations_from_records(
+        [{"Time": ts, "Load": 5.0, "interval_minutes": 15.0}], "ISONE"
+    )
+    assert obs[0].interval_minutes == 15.0
+
+
+def test_load_records_interval_minutes_from_default():
+    ts = datetime(2026, 1, 10, 9, tzinfo=UTC)
+    obs = load_observations_from_records(
+        [{"Time": ts, "Load": 5.0}], "ISONE", default_interval_minutes=60.0
+    )
+    assert obs[0].interval_minutes == 60.0
+
+
+def test_load_records_missing_interval_minutes_and_no_default_raises():
+    ts = datetime(2026, 1, 10, 10, tzinfo=UTC)
+    with pytest.raises(ValueError, match="interval_minutes"):
+        load_observations_from_records([{"Time": ts, "Load": 5.0}], "ISONE")
 
 
 def test_records_missing_required_column_raise():
@@ -406,6 +448,46 @@ def test_cli_parser_dispatches_extract():
     assert args.dataset == "load"
     assert args.start == date(2026, 1, 10)
     assert args.dry_run is True
+
+
+def test_cli_parser_dataset_choices_include_wind():
+    args = cli.build_parser().parse_args(
+        [
+            "extract",
+            "--dataset",
+            "wind",
+            "--start",
+            "2026-01-10",
+            "--end",
+            "2026-01-11",
+            "--dry-run",
+        ]
+    )
+    assert args.dataset == "wind"
+
+
+def test_cli_extract_dry_run_with_out_writes_csv(tmp_path, capsys):
+    source = FakeLoadSource(_obs())
+    out = tmp_path / "load.csv"
+    code = cli.cmd_extract(
+        _extract_args(dry_run=True, out=str(out)),
+        source_factory=lambda name, zone: source,
+    )
+    assert code == 0
+    assert out.exists()
+    out_text = out.read_text()
+    assert "load_mw" in out_text
+    assert "would write 2 rows" in capsys.readouterr().out
+
+
+def test_cli_extract_out_without_dsn_or_dry_run_still_errors_on_dsn(capsys, monkeypatch):
+    monkeypatch.delenv("OWR_DATABASE_URL", raising=False)
+    code = cli.cmd_extract(
+        _extract_args(out="/tmp/should-not-be-created.csv"),
+        source_factory=lambda name, zone: FakeLoadSource(_obs()),
+    )
+    assert code == 2
+    assert "no database DSN" in capsys.readouterr().out
 
 
 def test_cli_transform_and_validate_are_scaffolded(capsys):

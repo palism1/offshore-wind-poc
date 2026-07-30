@@ -18,7 +18,9 @@ from collections.abc import Callable, Sequence
 from datetime import date
 from typing import Any
 
+from owr.etl.credentials import MissingCredentialError, redact_secrets
 from owr.etl.extract import DATASETS, ExtractResult, Source, extract, source_for
+from owr.etl.rows_csv import write_rows_csv
 
 
 def _default_connect(dsn: str) -> Any:
@@ -35,13 +37,41 @@ def cmd_extract(
     source_factory: Callable[..., Source] = source_for,
     connect: Callable[[str], Any] = _default_connect,
 ) -> int:
-    """Run ``etl extract`` for one dataset over a date window."""
+    """Run ``etl extract`` for one dataset over a date window.
+
+    Thin wrapper around ``_run_extract`` whose only job is to keep the EIA API
+    key out of any exception that escapes the pull: a missing credential gets our
+    own actionable message (exit 2, mirroring the missing-DSN case below); any
+    other exception is printed as its type plus a redacted message (exit 1) so a
+    genuine bug is still diagnosable without risking a leaked key in the
+    traceback. This broad catch is an accepted trade for that guarantee — see
+    docs/PLAN_EIA_EXTRACTOR.md Phase A3.
+    """
+    try:
+        return _run_extract(args, source_factory=source_factory, connect=connect)
+    except MissingCredentialError as exc:
+        print(f"error: {exc}")
+        return 2
+    except Exception as exc:
+        print(f"error: {type(exc).__name__}: {redact_secrets(str(exc))}")
+        return 1
+
+
+def _run_extract(
+    args: argparse.Namespace,
+    *,
+    source_factory: Callable[..., Source],
+    connect: Callable[[str], Any],
+) -> int:
     dataset = DATASETS[args.dataset]
     source = source_factory(args.dataset, zone=args.zone)
     start, end = args.start, args.end
+    out = getattr(args, "out", None)
 
     if args.dry_run:
         result = extract(dataset, source, start, end, conn=None)
+        if out:
+            write_rows_csv(out, dataset, result.rows, result.provenance)
         _print_result(result, dry_run=True)
         return 0
 
@@ -63,6 +93,8 @@ def cmd_extract(
         close = getattr(conn, "close", None)
         if callable(close):
             close()
+    if out:
+        write_rows_csv(out, dataset, result.rows, result.provenance)
     _print_result(result, dry_run=False)
     return 0
 
@@ -73,7 +105,7 @@ def _print_result(result: ExtractResult, *, dry_run: bool) -> None:
     print(f"etl extract [{result.dataset}]: {verb} {result.rows_built} rows")
     print(f"  source          = {prov.source}")
     print(f"  retrieved_at    = {prov.retrieved_at.isoformat()}")
-    print(f"  source_query    = {prov.source_query}")
+    print(f"  source_query    = {redact_secrets(prov.source_query)}")
     print(f"  dataset_version = {prov.dataset_version}")
 
 
@@ -110,6 +142,14 @@ def build_parser() -> argparse.ArgumentParser:
         "--dry-run",
         action="store_true",
         help="pull and stamp provenance but do not write to the database",
+    )
+    extract_p.add_argument(
+        "--out",
+        default=None,
+        metavar="PATH",
+        help="also write the stamped rows to this CSV (same column order as the "
+        "database insert). Independent of --dry-run; you still need either "
+        "--dry-run or a DSN.",
     )
     extract_p.set_defaults(func=cmd_extract)
 

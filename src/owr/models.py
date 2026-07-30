@@ -10,6 +10,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import date
 from enum import StrEnum
+from typing import Protocol
 
 HOURS_PER_DAY = 24
 
@@ -90,6 +91,18 @@ class StressWindow:
     start: date
     end: date
     days: int
+
+
+class DailyLoadLike(Protocol):
+    """What stress detection actually needs: a date and a daily energy total.
+
+    ``DayProfile`` satisfies this structurally; so does ``owr.etl.daily.DailyLoad``.
+    Not marked ``runtime_checkable``: ``DayProfile.load_mwh`` is a property, and
+    ``isinstance`` against a data protocol raises anyway.
+    """
+
+    date: date
+    load_mwh: float
 
 
 class WrapConvention(StrEnum):
