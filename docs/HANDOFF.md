@@ -497,3 +497,209 @@ Postgres-backed store at runtime.
 4. Surface disagreements between documents as a team decision; do not silently pick a side.
 5. Design constants are labeled config values in `src/owr/config.py`, never magic numbers.
    Each docstring names the open team question it maps to.
+
+---
+
+# Session checkpoint — 2026-07-30
+
+Written mid-session as a safety net. **The SWE pipeline is in flight** — plan written and
+under adversarial review, no implementation started. Nothing is committed.
+
+## Working tree state (uncommitted)
+
+| Path | State | What it is |
+|---|---|---|
+| `docs/FACT_CHECK_REPORT.md` | modified | Three new 2026-07-30 addendum sections + one struck-through stale caveat |
+| `docs/source/2026-07-27_Overview_Document.pdf` | untracked | Mitchell's brief, stored verbatim, unedited |
+| `docs/PLAN_EIA_EXTRACTOR.md` | untracked | The plan under review (see below) |
+
+Branch: `storage-physics-peak-window`, still unmerged to `main`.
+
+## Environment change made this session
+
+The `etl` extra is now installed: `uv pip install -e '.[etl]'` → **gridstatus 0.36.0**.
+**The venv has no pip** — it is uv-managed. `python -m pip` fails; use `uv pip`.
+
+## Live data findings (measured, not assumed)
+
+A live ISO-NE dry-run pull works over the network:
+`etl extract --dataset load --start 2026-01-05 --end 2026-01-07 --dry-run` → 576 rows.
+
+1. **ISO-NE `get_load` returns 5-minute data, not hourly.** 576 rows / 2 days = 288/day =
+   24×12. But `db/migrations/001_init.sql:23` defines the target as `raw.hourly_load`.
+   Daily totals computed by summing MW readings would overstate by 12× — each reading is
+   MW over a 1/12-hour interval and must be integrated, not summed.
+2. **DST is present and measured:**
+   | Date | Rows | Hours |
+   |---|---|---|
+   | 2025-03-09 (spring forward) | 276 | 23 |
+   | 2025-06-10 (ordinary) | 288 | 24 |
+   | 2025-11-02 (fall back) | 300 | 25 |
+   Any aggregation assuming 288 intervals/day is wrong twice a year by ∓4%. Because the
+   p90 runs over *daily totals*, mis-sized days can change which days cross the threshold
+   and therefore change the stress-window list, which is the deliverable.
+3. **`raw.hourly_wind` already exists** (`001_init.sql:36`) with
+   `PRIMARY KEY (source, ts, horizon_days)`. `horizon_days` is in the PK so it cannot be
+   NULL for realized (non-forecast) EIA rows.
+4. **Timing:** ~1.5 s per 2-day window → a full 2022–2026 pull is roughly 20–25 minutes.
+
+## The plan under review — `docs/PLAN_EIA_EXTRACTOR.md`
+
+Covers (A) the EIA-930 wind extractor and (B) computing real p90 daily stress thresholds.
+Its load-bearing claims, recorded here so they are not lost if the review is:
+
+- Use `gridstatus`, not a hand-rolled EIA client, because `EIA.get_dataset` sends the key
+  as an `X-Api-Key` **header** while `list_routes`/`list_facets` put it in the **URL query
+  string** — a hand-rolled client tends toward the latter, which leaks the key into every
+  `requests` exception message. "Never call `list_routes`/`list_facets`" is a hard rule.
+- Key safety by never binding the key to a name: `require_eia_api_key()` returns nothing,
+  `gridstatus.EIA()` reads the env itself, the Source holds a `getenv` *callable*, and is a
+  plain class (no dataclass auto-`__repr__`). `redact_secrets()` is defence in depth.
+- `source_query` records the env var **name**, arguing the key is authentication rather
+  than a query parameter and so a keyless query is still reproducible.
+- **No new wind table needed**; realized rows carry `horizon_days = 0`. Migration 004 is
+  documentation + a CHECK, explicitly optional — the extractor must work against a DB
+  built from `001` alone.
+- **Retarget load to a new `raw.system_load`** with an `interval_minutes` column
+  (migration 005), making `LoadObservation.interval_minutes` required. **This breaks three
+  existing tests**, which the plan names.
+- **The 17,395-hour anomaly — partly resolved.** The arithmetic checks out: spring-forward
+  2022–2026 always falls in March, so each March is 743 h, a complete 25-file set of
+  Jan/Feb/Mar/Jun/Jul 2022–2026 is 18,139 h, and 18,139 − 744 = 17,395 exactly.
+  **But this does not identify *which* file is missing.** Ten of the 25 files (5 Januaries
+  + 5 Julys) are 744 h each, so removing any one of them reproduces 17,395. The arithmetic
+  proves only that **exactly one 744-hour file is missing**; it excludes Feb/Mar/Jun as
+  candidates and no more. "July 2026, the current month at pull time" remains a
+  plausibility argument. Settle it with `ls whlsecost_hourly_4008_*.csv`.
+  *(Corrected 2026-07-30 after adversarial review overturned the uniqueness claim.)*
+- **Two bugs found by reading `stress_finder.py`:**
+  (a) `find_stress_windows` uses **index adjacency, not date adjacency**
+  (`stress_finder.py:53-68`) — concatenating five winters would report stressed 2022-02-28
+  followed by stressed 2022-12-01 as a two-day event across a nine-month gap.
+  (b) The settled definition needs a **pooled** p90 applied to **per-winter** runs, which
+  the current signature cannot express. Proposed fix: split out
+  `find_stress_windows_at_threshold(days, threshold, min_window_days)`.
+- Work belongs in the scaffolded `transform`/`validate` subcommands, CSV I/O, **no
+  Postgres required**.
+- Claims the five winters (Dec–Feb) contain **no DST transition**, so DST cannot corrupt
+  the p90 population; the DST machinery still serves as the missing-data gap detector.
+- 62 test cases across six files, including eight key-leak assertions.
+
+## Implementation — DONE and verified (2026-07-30)
+
+The plan was adversarially reviewed, revised (one BLOCKING finding: date-aware adjacency),
+and implemented. **Uncommitted, in the working tree.**
+
+- **Tests: 303 passed, 3 skipped** (baseline was 231 → **72 new tests**).
+- **`ruff check .`: All checks passed.**
+- Note: `ruff format --check` reports 12 files needing reformat, but **this is pre-existing
+  and not enforced** — `.github/workflows/ci.yml:33` runs `ruff check` only, and untouched
+  files (e.g. `tests/test_soc_engine.py`) are among the 12. Do not mass-reformat.
+
+New modules: `src/owr/etl/{credentials,daily,rows_csv,seasons,transform}.py`.
+Modified: `src/owr/etl/{cli,extract}.py`, `src/owr/{models,stress_finder}.py`.
+New tests: `tests/test_etl_{credentials,daily,eia,rows_csv,seasons,transform}.py`.
+
+The four non-negotiables were spot-checked in the source, not merely inferred from a green
+suite:
+1. **Date-aware adjacency** — `stress_finder.py:65`:
+   `elif days[i].date != days[i-1].date + timedelta(days=1)`. No pre-flight gate.
+2. **Key never bound to a name** — `credentials.py:33` `require_eia_api_key(...) -> None`.
+3. **Canaries** — `test_etl_eia.py:71,77` `list_routes`/`list_facets` raise `AssertionError`.
+4. **`interval_minutes` required** — `extract.py:67` plain `float` field, validated positive
+   at `:70`, no default.
+
+One line-length lint in `tests/test_etl_transform.py:101` was wrapped by hand rather than
+dispatching an agent for a one-line fix.
+
+## Next steps, in order
+
+1. **Run the real 2022–2026 ISO-NE pull** and compute the p90 daily thresholds. **These
+   replace the 16,750 and 3,504 MWh figures**, which the 2026-07-28 fact-check found were
+   hourly-basis and therefore wrong by ~24× under the team's daily definition.
+   Not yet run — deliberately deferred.
+2. Answer the plan's open questions **Q8** (should the API reject non-consecutive day
+   lists?) and **Q9** (`features.daily_load` needs five new columns before any Postgres I/O
+   layer — migration 006).
+3. Commit. Nothing from 2026-07-30 is committed yet.
+4. Merge `storage-physics-peak-window` to `main`.
+
+**Client-visible behaviour change to disclose:** `api/app.py:138` — a client posting a
+gapped day list now gets different (correct) windows. The old code merged across gaps.
+
+## Still blocked on the team
+
+- **EIA API key** — needed only to *run* the wind extractor, not to build or test it.
+  Goes in `.env` (already gitignored, `.gitignore:8`); the file does not exist yet.
+  Never paste it into chat or commit it.
+- **Which wind are we co-located with** — BOEM's Gulf of Maine floating leases, or
+  SouthCoast/Vineyard south of Martha's Vineyard? Settles the siting story and defines
+  `miles` in the capex formula.
+- **Mitchell's recharge question.** Note that `Cycle Recharge Mismatch` in his own spec
+  (p.17 of the stored PDF) already encodes it — it is an output of this work, not a
+  prerequisite for it.
+
+---
+
+# Data pull complete — 2026-07-30, results
+
+The 2022–2026 ISO-NE load pull ran. **Headline: the real winter p90 daily stress threshold
+is 385,833 MWh/day.** Full detail, provenance, and cross-checks are in the
+"Real p90 Daily Stress Thresholds" section of `docs/FACT_CHECK_REPORT.md`.
+
+## Artifacts on disk
+
+- `data/load_{2022..2026}.csv` — raw 5-minute pulls, **gitignored** (`data/` in
+  `.gitignore`). 324,043 intervals total. `load_2022.csv` is header-only (0 rows).
+- The analysis was driven by a throwaway script, **not** committed:
+  `~/.claude/jobs/6f45afca/tmp/p90_analysis.py`. It calls the tested
+  `owr.etl.daily` / `owr.etl.transform` modules. Recreate it or wire the CLI (below).
+
+## Results
+
+| | Winter (Dec 1 – Feb 28/29) | Summer (Jun 1 – Sep 30) |
+|---|---|---|
+| p90 daily total | **385,833 MWh** | **413,476 MWh** |
+| median | 345,417 | 320,220 |
+| min / max | 279,576 / 430,209 | 227,491 / 491,457 |
+| population | 270 complete days | 393 complete days |
+
+Multi-day winter stress events (p90, min 2 days): **4 across 3 winters.**
+2023/24 none · 2024/25 one (2025-01-21→23) · 2025/26 three, including an
+**11-day event 2026-01-24 → 2026-02-03**, which overlaps the event Report B priced at
+$443/MWh — independent corroboration.
+
+## Three things the pull established
+
+1. **Coverage stops at 2023-06-30.** The credential-free feed has no 2022 data (a 2022 pull
+   returns 0 rows). **Three winters exist, not five.** Every "2022–2026" claim in the brief
+   must be rescoped to 2023–2026 or wait on the credentialed ISO-NE hourly feed
+   (Phase A4 of `PLAN_EIA_EXTRACTOR.md`).
+2. **The ~24× error is now measured, not inferred.** 385,833 ÷ 24 = 16,076 MWh/hour, within
+   4% of Report A's hourly p90 of 16,750. Same reality, correct units.
+3. **Summer p90 exceeds winter p90.** ISO-NE is summer-peaking. See the open question below.
+
+## OPEN — blocks publishing the event list. Ask Mitchell.
+
+The Stress Window definition says "peak daily total load sits above the 90th percentile"
+but never states **which population the percentile is taken over**.
+
+- Per-season (winter days ranked against winter days) → the 4 events above.
+- Pooled across all seasons → summer days occupy the top decile, the threshold rises, and
+  the winter event count may fall toward zero — which would undercut the premise that
+  winter stress is what storage should be sized against.
+
+This run used **per-season**, consistent with the project's winter-fuel-adequacy framing.
+That is an assumption made by the analyst, not a decision recorded in the spec. It must be
+written into the definition, and stated wherever the event list is published.
+
+## Still outstanding
+
+1. **`etl transform` is NOT wired** — it still prints "not implemented yet". The modules
+   (`transform.py`, `daily.py`, `seasons.py`) are built and tested; only the CLI subcommand
+   wiring is missing. This is the next implementation step.
+2. Plan questions **Q8** (should the API reject non-consecutive day lists?) and **Q9**
+   (`features.daily_load` needs 5 new columns — migration 006).
+3. **Nothing from 2026-07-30 is committed.**
+4. Merge `storage-physics-peak-window` to `main`.
+5. EIA wind extractor is built but has never been run — needs `EIA_API_KEY` in `.env`.
