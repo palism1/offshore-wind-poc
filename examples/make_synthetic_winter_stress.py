@@ -10,7 +10,7 @@ Days 1-3 are mild (flat load, ample wind); days 4-6 are a cold snap with identic
 daily energy totals reached through different hourly shapes. The tie is enforced by
 construction rather than typed by hand: each cold day's hour-23 load is the
 remainder needed to reach ``COLD_DAY_TOTAL_MWH``, so reshaping hours 0-22 later
-cannot silently break it. At the default ``--severity-percentile 0.95`` /
+cannot silently break it. At the default ``--severity-percentile 0.90`` /
 ``--min-stress-window-days 2``, this makes all three cold days clear the threshold
 as one 3-day stress window — the flagship demo command depends on that tie holding
 exactly, so every invariant below is checked before anything is written.
@@ -41,7 +41,7 @@ COLD_SHOULDER_MW = 10000.0
 # Flat wind level, every hour of every cold day (300-600 MW range).
 COLD_WIND_MW = 400.0
 # Shared daily total (MWh) all three cold days must hit exactly, so the default
-# --severity-percentile 0.95 threshold selects all three as one 3-day window.
+# --severity-percentile 0.90 threshold selects all three as one 3-day window.
 COLD_DAY_TOTAL_MWH = 216000.0
 
 DEFAULT_OUTPUT_PATH = "examples/synthetic_winter_stress.csv"

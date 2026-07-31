@@ -32,6 +32,7 @@ from typing import TextIO
 from owr import scenario_input
 from owr.config import DEFAULT_CONFIG, Config
 from owr.initial_soc import charge_from_wind
+from owr.metrics import equivalent_full_cycles as _equivalent_full_cycles
 from owr.models import DayProfile, StorageAsset
 from owr.simulator import simulate
 from owr.stress_finder import find_stress_windows
@@ -58,11 +59,13 @@ _OPEN_QUESTIONS_STATIC = {
     "stress_event_definition": {
         "flags": ["--severity-percentile", "--min-stress-window-days"],
         "note": (
-            "The implemented rule is daily energy at or above a percentile of the "
-            "series, with runs of N consecutive days forming an event. A competing "
-            "rule counts hours within the day (12+ hours above threshold = stress "
-            "day, 2+ consecutive = event). Three artifacts use three rules on the "
-            "same January 2025 activity. Undecided."
+            "Settled 2026-07-28: daily total demand at or above a percentile of "
+            "the series, with a run of N consecutive such days forming an event. "
+            "Report B's 12-hour rule (12+ hours above threshold within a day) is "
+            "retired. What remains open is the threshold value on real data: both "
+            "published numbers (3,504 and 16,750 MWh) are hourly-basis and do not "
+            "carry over to a daily-basis rule, so a fresh p90 must be computed on "
+            "daily sums."
         ),
         "handoff_ref": "docs/HANDOFF.md open question 2",
     },
@@ -439,7 +442,9 @@ def _build_report(
 ) -> dict:
     energy_discharged = sum(h.discharge for d in result.daily for h in d.hourly)
     energy_charged = sum(h.charge for d in result.daily for h in d.hourly)
-    equivalent_full_cycles = (energy_discharged / asset.efficiency) / asset.total_mwh
+    equivalent_full_cycles = _equivalent_full_cycles(
+        energy_discharged, rated_energy_mwh=asset.total_mwh
+    )
     window_share = (
         equivalent_full_cycles / args.cycles_per_year if args.cycles_per_year else None
     )
@@ -750,7 +755,7 @@ def _render_table(report: dict, args: argparse.Namespace, out: TextIO) -> None:
     )
     out.write(
         f"  {'equivalent full cycles'.ljust(label_width)}"
-        f"{summary['equivalent_full_cycles']:.3f}   (energy drawn / rated capacity)\n"
+        f"{summary['equivalent_full_cycles']:.3f}   (energy discharged / rated capacity)\n"
     )
     if summary["window_share_of_annual_cycles"] is not None:
         out.write(

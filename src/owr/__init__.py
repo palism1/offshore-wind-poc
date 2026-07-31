@@ -7,7 +7,15 @@ database or any external API. Public surface:
 """
 
 from owr.config import Config
-from owr.models import DailyResult, DayProfile, HourlyResult, StorageAsset, StressWindow
+from owr.models import (
+    DailyResult,
+    DayProfile,
+    HourlyResult,
+    PeakWindow,
+    StorageAsset,
+    StressWindow,
+    WrapConvention,
+)
 from owr.simulator import SimulationResult, simulate
 
 __all__ = [
@@ -15,6 +23,8 @@ __all__ = [
     "StorageAsset",
     "DayProfile",
     "StressWindow",
+    "PeakWindow",
+    "WrapConvention",
     "HourlyResult",
     "DailyResult",
     "SimulationResult",

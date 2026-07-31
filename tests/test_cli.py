@@ -218,6 +218,26 @@ def test_json_summary_matches_direct_simulate_call():
     assert summary["final_soc"] == pytest.approx(result.final_soc)
 
 
+def test_equivalent_full_cycles_is_energy_discharged_over_rated_capacity():
+    """Pins the Phase 3 formula change: EFC is discharged / rated capacity, with
+    no division by efficiency. Coincides with the old (energy drawn / rated
+    capacity) formula at efficiency=1.0, so a second run at --efficiency 0.7 is
+    what actually proves the /efficiency term is gone (risk R1)."""
+    report = _report([])
+    summary = report["summary"]
+    assert summary["equivalent_full_cycles"] == pytest.approx(
+        summary["energy_discharged_mwh"] / report["asset"]["total_mwh"]
+    )
+
+
+def test_equivalent_full_cycles_at_nondefault_efficiency():
+    report = _report(["--efficiency", "0.7"])
+    summary = report["summary"]
+    assert summary["equivalent_full_cycles"] == pytest.approx(
+        summary["energy_discharged_mwh"] / report["asset"]["total_mwh"]
+    )
+
+
 def test_no_hourly_soc_below_min_soc():
     report = _report([])
     min_soc = report["asset"]["min_soc_mwh"]

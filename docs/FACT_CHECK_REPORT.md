@@ -9,7 +9,7 @@ Verification pass against the three source documents
   Sources: https://www.ferc.gov/explainer-interconnection-final-rule , https://www.ferc.gov/explainer-interconnection-final-rule-2023-A
 - **ISO-NE first (transitional) cluster study.** Confirmed: 26 interconnection requests, 21 battery storage, 2 solar, 3 wind, most located in Massachusetts, ~8 GW combined summer rated capacity, largest project SouthCoast Wind 1 (1,200 MW), expected completion **August 2026**.
   Sources: https://www.utilitydive.com/news/iso-ne-launches-cluster-study-of-26-battery-wind-and-solar-projec/803333/ , https://isonewswire.com/2025/10/20/iso-ne-begins-interconnection-transitional-cluster-study/ , https://www.renewableenergyworld.com/power-grid/transmission/iso-new-england-begins-its-first-interconnection-cluster-study-for-26-projects/
-  Caveat: the exact "August 6, 2026" date and the per-state breakdown (2 CT / 2 ME / 2 VT / 1 NH / 0 RI) were not independently confirmed; cite "August 2026" in slides unless the ISO filing is checked directly.
+  ~~Caveat: the exact "August 6, 2026" date and the per-state breakdown (2 CT / 2 ME / 2 VT / 1 NH / 0 RI) were not independently confirmed; cite "August 2026" in slides unless the ISO filing is checked directly.~~ **RESOLVED 2026-07-30 — both confirmed. See the 2026-07-30 addendum.**
 - **ISO-NE storage-specific Order 2023 compliance path.** Confirmed: ISO-NE is pursuing an alternative compliance pathway for storage interconnection, aiming to avoid a "control technology" requirement.
   Source: https://www.rtoinsider.com/58863-iso-ne-order-2023-compliance-storage/ , https://www.iso-ne.com/committees/key-projects/order-no-2023-key-project
 - **Transmission vs data center timelines (Scaling doc).** Supported: transmission permitting alone averages ~6.5 years and often exceeds 10 (total development commonly 8+ years); data centers build in 18 to 30 months (2 to 3 years including planning is fair).
@@ -147,3 +147,291 @@ analysis PDFs were re-read directly (`pdftotext -layout`) rather than via our ow
   defensible by scaling but not sourced. Label as assumptions on any slide.
 - **Whether 0.70 is the round-trip or one-way figure.** Not stated. Round-trip → ~0.837 each
   way; one-way turbine → ~0.49 round-trip. Blocks `config.py`.
+
+---
+
+# Fact-Check Addendum — 2026-07-30 (2026-07-27 Technical Brief + basin charts)
+
+Verification pass over the 2026-07-27 "Future Grid-Stress Scenario Explorer" brief, its
+Metrics V1.0 block, and three basin depth-profile charts. Externals checked against
+ISO-NE, NOAA, and USGS. The metric formulas were reviewed twice — once directly, once
+adversarially — and the second pass overturned five of the first pass's findings, which
+are recorded below as withdrawn so they are not re-litigated.
+
+## Verified
+
+- **ISO-NE Transitional Cluster Study completes by August 6, 2026.** Not a projection — a
+  tariff requirement. Study began 2025-10-11; interim results were released and developer
+  responses closed 2026-07-07; final report early August. This **supersedes the 2026-07-16
+  caveat** telling us to cite only "August 2026."
+  https://isonewswire.com/2025/10/20/iso-ne-begins-interconnection-transitional-cluster-study/
+- **Per-state breakdown of the 26 requests confirmed:** most in Massachusetts, two each in
+  Connecticut, Maine, and Vermont, one in New Hampshire, none in Rhode Island. The exact
+  Massachusetts count is not published anywhere located — do not state one.
+- **21-Day Energy Assessment Forecast and Report.** The brief's name and causal story are
+  ISO-NE's own: "two weeks in December 2017 and January 2018, which led the ISO to develop
+  the 21-Day Energy Assessment Forecast and Report."
+  https://www.iso-ne.com/about/what-we-do/21-day-forecast
+- **Georges Basin 379 m; Jordan and Wilkinson ~275 m each.** Re-confirmed against the same
+  NOAA source already cited in `DATA_SOURCES.md` [line 37].
+- **Stress Window definition matches the implementation.** The brief's "peak daily total
+  load above the 90th percentile" is what `src/owr/stress_finder.py:48` and
+  `config.py:92` already do, on daily sums at p90.
+
+## Contradicted
+
+1. **"Murray Basin" does not appear to be a Gulf of Maine feature.** NOAA and USGS name
+   three major basins — Wilkinson, Jordan, Georges — plus Grand Manan Basin and Emerald
+   Basin. Bathymetric searches for "Murray Basin" return the Murray Basin in *Australia*.
+   The chart's ~44°N feature is annotated with the Grand Manan Channel Sill, which is where
+   **Grand Manan Basin** sits; the name may have drifted from the nearby **Murr Escarpment**,
+   a submarine border fault paralleling the Maine coast. The feature must be pinned to a
+   coordinate and a chart before it is named in any deliverable.
+2. **Jordan Basin at 310 m contradicts the primary source.** NOAA puts Jordan and Wilkinson
+   at ~275 m *each*. The comparative chart's 270/310 split makes Jordan 40 m deeper than
+   Wilkinson when the source makes them equal. Wilkinson 270 vs 275 and Georges 380 vs 379
+   are rounding and are fine.
+3. **"S. Gulf Depression" at 42°N, 69.5°W may be Wilkinson Basin re-charted.** Wilkinson is
+   the western-Gulf basin and its Geotechnical Test Area lies within the 260 m contour; the
+   42°N/69.5°W point falls in its general area. The comparative chart plots the two as
+   distinct basins at different depths (212 vs 270 m). If they are the same feature, the
+   chart set double-counts one basin. **Resolve against the USGS Gulf of Maine 3-arc-second
+   DEM** (sample depth at coordinates rather than argue from named features):
+   https://pubs.usgs.gov/of/2011/1127/GOM03_v1_0faq.htm
+4. **Winter defined as "December 1st and February 28th"** drops Feb 29. The recorded team
+   definition is Dec 1 – Feb 28/29, and 2024 is inside the 2022–2026 data range.
+
+## Unverifiable — and load-bearing
+
+- **"For every year between 2022 and 2026, winter has consistently exhibited higher wind
+  generation than summer."** No source in this project supports a *per-year* series; Report A
+  gave one aggregate 1.80× ratio, computed on Jan–Mar vs Jun–Jul, which the 2026-07-28
+  addendum [Contradicted #4] already found wrong in both directions against the settled
+  season definitions. This sentence is the brief's central premise and must be recomputed
+  from EIA-930 under Dec 1 – Feb 29 / Jun 1 – Sep 30 before it is repeated.
+
+## Metric defects in V1.0 (ranked; all confirmed by adversarial review)
+
+1. **Fuel-Fired Generation Offset is the wrong shape.** `oil+gas − (wind+dispatched)` has no
+   time split, but `HANDOFF.md:271-275` records the team's settled meaning: fuel-fired MWh
+   *pre-event* against fuel-fired MWh *during the event*. As written it also double-counts
+   wind, since dispatched energy is stored wind.
+2. **Stress Window Effectiveness and Fuel Offset Percentage are not bounded the way their
+   [0, 100%] score tables assume, and they fail in this project's target scenario.** SWE's
+   denominator (oil + gas + wind) excludes nuclear, hydro, and imports, so in a winter,
+   low-wind, gas-constrained hour `capacity_dispatched` can exceed it and push SWE above
+   100%, where no score is defined. Fuel Offset %'s numerator goes negative whenever
+   `wind + dispatched > oil + gas`.
+3. **The two percentage metrics divide by different wholes.** SWE uses `SUM(oil+gas+wind)`;
+   Fuel Offset % uses `SUM(total_generation)`, which is undefined and evidently different.
+   Both feed the same Robustness score.
+4. **Scenario Robustness Score has no aggregation formula.** It lists four component
+   thresholds and never states how they combine (average, weighted, minimum). It is the only
+   metric in the document without a formula, and it stands in for a whole category.
+5. **The Economics category runs on variables absent from the brief's own taxonomy.**
+   `est_transmission_cost_per_mile`, `miles`, `est_storage_unit_cost`, `total_unit_count`,
+   and `Solution_Lifetime` appear under neither Independent, Dependent, nor Constants. This
+   compounds the already-recorded gap that the capex formula has no owner
+   (`PROJECT_STATE_2026-07-28.md:137`, `HANDOFF.md:198`). Cost per EFC's units do resolve
+   cleanly ($ ÷ (cycles/yr × yr) = $/cycle) — no defect there.
+6. **The RCM chain is broken in two places.** `Average Recharge Mismatch` is defined and
+   never used; `Recharge Capacity Mismatch` divides by `average_cycle_recharge_utilization`,
+   which is defined nowhere and is probably the same quantity renamed. The average is also
+   malformed: it sums over index `c` while the summand is indexed by `t`.
+7. **Protected reserve is encoded twice, inconsistently.** `Protected Reserve = 30%`
+   duplicates `Available Charge ≤ 70%`; `Protected Reserve Floor = 20%` duplicates
+   `SoC ≥ 20%`; and a 30% protected reserve is incompatible with SoC reaching 20%. The
+   settled encoding is Internal Inconsistency #3 above (20% floor + 10% strategic reserve),
+   shipped as `config.py:90-91` and `models.py:37-38`. Keep the floor/reserve pair and drop
+   the derived bounds.
+8. **One metric slot carries three names** — "Storage Utilization" (category list),
+   "Capacity Utilization" (dependent variable), and RCM (formula). None is reconciled.
+9. **CMI carries a vestigial `× 100%`** — a no-op left from an earlier percentage draft,
+   while its score bands are in MW.
+10. **Variable misclassification.** Available Charge (defined as SoC − reserve), Net Load,
+    and Peak Hour Triplet (`peak_window.py` output) are listed as *independent* but are all
+    derived. Wind Generation Scale is listed as a *constant* but reads as the primary sweep
+    variable. Unit Charge Rate has no Aggregate Charge Rate counterpart, breaking the
+    otherwise consistent unit→aggregate naming pattern.
+11. **Fuel-Fired Generation Offset (MWh) was superseded by Fuel Offset Percentage** per the
+    brief's own changelog, but both formulas and the MWh-labelled score band survive.
+12. **Regulatory Policies numbering skips 3 and 4.**
+
+## Withdrawn on adversarial review (do not re-raise)
+
+- "Comparing multiple storage technologies is outside scope" vs Alexander's Layer 1/2/3
+  proposal is **not** a contradiction — Alexander explicitly said not to model the three
+  layers, only to frame the simulation around them. This matches the existing design stance
+  (Internal Inconsistency #1 above, `PLAN.md:10`): one generic storage asset, multi-technology
+  framing kept in the narrative. The brief needs one sentence saying so.
+- "Cost per Equivalent Full Cycle (New!)" is a changelog marker for this doc revision, not a
+  novelty claim. EFC itself predates it in code; the blocker is that capex is unbuilt.
+- Charge Rate / Unit Charge Rate and Rated / Aggregate Power Output are a deliberate
+  generic→per-unit→aggregate hierarchy, not redundant terms.
+- Energy arbitrage and Load shift are distinct industry mechanisms (price-driven vs
+  demand-driven) that the brief's own V1.0/V1.1 split keeps on separate tracks.
+- Excluding capital cost from the Robustness composite is justified by the brief's System
+  Rules (reliability first, economics second).
+
+## Open — needs a team decision
+
+- Mitchell's question stands unanswered: **how the Provincetown hub is recharged.** The
+  depth verdict is unchanged by the two new candidate sites — 231 m and 212 m are further
+  below StEnSea's 600–800 m design depth than Georges Basin's 379 m, which was already
+  recorded as insufficient.
+- `HANDOFF.md:197` asked whether Scenario Robustness Score replaces Decision Confidence.
+  The brief's category list pairs them directly. **Treat as answered: yes.**
+
+## Assumptions and System Rules (added 2026-07-30, second pass)
+
+The first pass of this addendum skipped the brief's Assumptions block and System Rules.
+Reviewed here.
+
+1. **"Total capacity is co-located with offshore wind" is unresolved against the siting
+   work, and the answer changes the capex formula.** BOEM auctioned eight Gulf of Maine
+   lease areas on 2024-10-29, off Maine, New Hampshire, and Massachusetts, 23–92 miles
+   offshore in water too deep for fixed-bottom turbines (floating only). Storage in a Gulf
+   of Maine basin could co-locate with those. But SouthCoast Wind (~26 nmi south of
+   Martha's Vineyard) and Vineyard Wind (~14 mi south), the projects named in the cluster
+   study, sit in southern New England waters — a different body of water from every basin
+   on the depth charts. The assumption is true against one lease set and false against the
+   other, and the brief does not say which. It also determines what `miles` measures in
+   `Estimated Capital Costs`, a term that is currently undefined.
+   https://www.boem.gov/renewable-energy/state-activities/maine/gulf-maine
+2. **System Rules do not match the dispatch module.** "Reliability first, economics second,
+   efficiency third" is encoded nowhere as an ordering. `dispatch.py:36-37` blends
+   peak-shaving and smoothing at `peak_weight=0.5 / smooth_weight=0.5`, while the brief's
+   own definition of *Strategic reserve dispatch* says to hold charge for declared
+   reliability events "rather than daily peak-shaving." Spec and code disagree on the
+   dispatch policy. Resolve before the metrics are implemented against either.
+3. **"Temperature change does not affect total capacity, power output, or charge rate" is
+   consistent with the implementation** — `storage_physics.py:18` fixes
+   `RHO_SEAWATER_KG_M3 = 1025.0`. No action; noted as a verified spec/code agreement.
+4. **"The peak of wind generation occurs in the winter" (Supporting Data)** is the third
+   statement of the claim flagged under Unverifiable above. Same recomputation blocks it.
+5. **"Redundancies in the system are preferred by grid planners"** is unsourced and stated
+   as a determinant. Either cite it or relabel it as a design preference.
+6. **The three assumption categories — Validating, Supporting Data, Determinants — are
+   never defined.** Items appear to be sorted by whether the project tests them, rests on
+   them, or fixes them, but nothing says so.
+7. **"The risks of load-forecasting uncertainty can be mitigated by redistributing wind
+   energy" (Validating)** is the one assumption the simulator cannot currently test: no
+   forecast-error model exists in the engine. The MPC rolling horizon absorbs error
+   implicitly (Best-Practice Notes above) but nothing injects or measures it.
+
+## Not yet recorded anywhere
+
+The brief itself does not exist in this repository — it arrived as pasted text. Following
+the precedent set on 2026-07-28 for Alexander's data-source spec (keep the author's text
+verbatim, keep our analysis in a separate document), the brief should be committed
+verbatim as its own file so that this addendum has a stable referent and so no one's
+wording is paraphrased into ours.
+
+## Third pass — reading the actual PDF (2026-07-30)
+
+The first two passes worked from text pasted into chat. The source document is now stored
+verbatim at `docs/source/2026-07-27_Overview_Document.pdf` (20 pages, "Overview Document",
+Last Updated Jul 27 2026). Reading it directly changes three findings and adds four.
+
+### Corrections to this addendum
+
+- **Wind Generation Scale is not miscategorised — the document answers itself.** It appears
+  under **Required Inputs** (p.12), which is the operative input list. Listing it under
+  Constants is the error, not the classification. Withdraw the earlier framing.
+- **"Fuel-Fired Generation Offset (MWh) → Fuel Offset Percentage" is not in the document.**
+  That changelog came from chat notes, not the brief. The PDF's **Success Criteria page is
+  literally "TBD"** (p.20). The metric supersession is a team intent, not a written decision.
+- **Scenario Robustness Score is emptier than reported.** Not only is there no aggregation
+  formula — the four threshold values are blank in the document (p.18): each component is
+  listed with a trailing colon and nothing after it.
+
+### New findings
+
+1. **"Reserve Power Output" is a Required Input that exists in no other list.** It appears on
+   p.12 among the five required inputs and appears nowhere in Variables of Interest, nowhere
+   in Constants, and in no metric formula. Either it is the same thing as Unit Power Output ×
+   unit count, or it is a sixth quantity nobody has defined.
+2. **"Location archetype: one of the project's four categories of storage siting" — the four
+   categories are never enumerated anywhere in the document.** This is directly load-bearing
+   for the current basin discussion: the siting debate (Provincetown hub, Murray Basin,
+   S. Gulf Depression, co-location with which lease areas) has no defined taxonomy to slot
+   candidates into.
+3. **Wind Generation Scale is specified as "a scalar integer."** As written this forbids
+   fractional scaling (1.5× wind), which is the natural sweep for a scenario explorer.
+   Probably should read "scalar."
+4. **Required Inputs contains two struck-through future options** — Grid Inflexibility and
+   Natural gas inventory. Recorded so they are not mistaken for dropped requirements.
+
+### Status of the 2026-07-16 "empty sections" finding
+
+Internal Inconsistency #5 above flagged Constraints, Metrics, Required Inputs, and Success
+Criteria as blank. Three of the four are now written. **Success Criteria remains TBD** and is
+the last blank section in the document.
+
+---
+
+# Real p90 Daily Stress Thresholds — computed 2026-07-30
+
+First computation from live ISO-NE data, replacing the invalidated report figures.
+Source: `gridstatus.ISONE().get_load()` (credential-free public 5-minute system-load feed),
+`gridstatus==0.36.0`, retrieved 2026-07-30T18:21Z. 324,043 five-minute intervals →
+1,126 local calendar days (1,122 complete, 4 excluded as incomplete).
+
+## Coverage limit — DATA DOES NOT REACH 2022
+
+The credential-free feed's earliest record is **2023-06-30T20:00-04:00**. A 2022 pull
+returns **0 rows**. So the usable population is **three winters** (2023/24, 2024/25,
+2025/26 — 91/90/90 days), not the five the brief assumes. Anything claiming a
+2022–2026 span must either be rescoped to 2023–2026 or wait on the credentialed
+ISO-NE Web Services hourly feed. This is Phase A4 in `PLAN_EIA_EXTRACTOR.md`.
+
+## Thresholds (p90 of daily total load, per season, pooled across years)
+
+| Season | p90 threshold | Median | Min | Max | Population |
+|---|---|---|---|---|---|
+| Winter (Dec 1 – Feb 28/29) | **385,833 MWh/day** | 345,417 | 279,576 | 430,209 | 270 days |
+| Summer (Jun 1 – Sep 30) | **413,476 MWh/day** | 320,220 | 227,491 | 491,457 | 393 days |
+
+**Cross-check against the invalidated numbers.** 385,833 ÷ 24 = **16,076 MWh/hour**, within
+4% of Report A's hourly p90 of 16,750 MWh. That independently confirms the 2026-07-28
+finding: the old figures were hourly-basis, and the daily-basis threshold is ~24× larger.
+The correct daily number is 385,833 MWh — **not** 16,750.
+
+**Partial validation of the seasonal denominators.** The previously unverifiable
+434,214 MWh (winter) sits just above our observed winter maximum of 430,209 MWh — consistent
+with a peak-day total. The summer figure 561,878 MWh sits well above our observed summer
+maximum of 491,457 MWh and is not corroborated.
+
+## Multi-day stress events (winter p90, minimum window 2 days)
+
+| Winter | Events | Detail |
+|---|---|---|
+| 2023/24 | 0 | none |
+| 2024/25 | 1 | 2025-01-21 → 2025-01-23 (3 days) |
+| 2025/26 | 3 | 2026-01-20 → 2026-01-21 (2 d); **2026-01-24 → 2026-02-03 (11 d)**; 2026-02-07 → 2026-02-09 (3 d) |
+
+Four multi-day events across three winters. The **11-day January–February 2026 event** is
+the dominant one and overlaps the event Report B priced at $443/MWh (Jan 25–31, 2026), the
+highest-cost event in its dataset — independent corroboration from a separate source.
+
+## Open spec question raised by these numbers — needs a team decision
+
+**Summer's p90 daily total (413,476) is HIGHER than winter's (385,833)**, and the summer
+maximum (491,457) exceeds the winter maximum (430,209). ISO-NE is summer-peaking; the
+all-time system peak is 28,130 MW in August 2006.
+
+The Stress Window definition says "peak daily total load sits above the 90th percentile"
+without stating **the population the percentile is taken over**. The table above uses a
+*per-season* population. If the p90 were pooled across all seasons instead, the threshold
+would rise and the winter event count would fall — possibly to near zero, which would
+invalidate the premise that winter stress is the thing to size storage against.
+
+The project's framing is winter fuel adequacy, which argues for the per-season reading.
+But this must be written into the definition rather than left implicit, and the choice
+should be stated wherever the event list is published. **Raise with Mitchell.**
+
+## Reproducing
+
+Thresholds were computed through the tested `owr.etl.daily` / `owr.etl.transform` modules.
+The `etl transform` CLI subcommand is **not yet wired** (it still prints "not implemented
+yet"); this run drove the modules directly. Wiring it is the next implementation step.

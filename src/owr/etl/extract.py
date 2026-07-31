@@ -25,11 +25,14 @@ then the layers below the provider are exercised entirely with fixtures.
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Sequence
+import math
+import os
+from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass
 from datetime import date, datetime
 from typing import Any, Protocol, runtime_checkable
 
+from owr.etl.credentials import EIA_API_KEY_ENV, require_eia_api_key
 from owr.etl.provenance import Provenance
 
 # The four provenance columns every raw.* row carries, in a fixed order appended
@@ -49,11 +52,23 @@ PROVENANCE_COLUMNS: tuple[str, ...] = (
 
 @dataclass(frozen=True)
 class LoadObservation:
-    """One hourly system/zone load reading, normalized from a provider payload."""
+    """One interval system/zone load reading, normalized from a provider payload.
+
+    ``interval_minutes`` is required, not defaulted: energy is
+    ``load_mw * interval_minutes / 60``, and a wrong or assumed interval length is a
+    silent multiplicative error (e.g. treating 5-minute ISO-NE readings as hourly
+    overstates energy 12x). See ``load_observations_from_records`` for how it is
+    derived from a provider payload.
+    """
 
     ts: datetime
     zone: str
     load_mw: float
+    interval_minutes: float
+
+    def __post_init__(self) -> None:
+        if self.interval_minutes <= 0:
+            raise ValueError("interval_minutes must be positive")
 
 
 @dataclass(frozen=True)
@@ -63,6 +78,16 @@ class LmpObservation:
     ts: datetime
     zone: str
     lmp: float
+
+
+@dataclass(frozen=True)
+class WindObservation:
+    """One hourly realized wind-generation reading (EIA-930, ISO-NE respondent)."""
+
+    ts: datetime
+    gen_mw: float
+    forecast_mw: float | None = None
+    horizon_days: int = 0  # 0 = realized; >0 reserved for forecast rows (see Q6)
 
 
 # ---------------------------------------------------------------------------
@@ -103,17 +128,34 @@ class RawDataset:
 
 
 def _load_values(obs: LoadObservation) -> dict[str, object]:
-    return {"ts": obs.ts, "zone": obs.zone, "load_mw": obs.load_mw}
+    return {
+        "ts": obs.ts,
+        "zone": obs.zone,
+        "load_mw": obs.load_mw,
+        "interval_minutes": obs.interval_minutes,
+    }
 
 
 def _lmp_values(obs: LmpObservation) -> dict[str, object]:
     return {"ts": obs.ts, "zone": obs.zone, "lmp": obs.lmp}
 
 
+def _wind_values(obs: WindObservation) -> dict[str, object]:
+    return {
+        "ts": obs.ts,
+        "gen_mw": obs.gen_mw,
+        "forecast_mw": obs.forecast_mw,
+        "horizon_days": obs.horizon_days,
+    }
+
+
+# name "load" stays the CLI key; the table is raw.system_load (migration 005) —
+# the provider's credential-free ISO-NE feed is 5-minute, not hourly, so the
+# table is granularity-agnostic and carries interval_minutes on every row.
 HOURLY_LOAD = RawDataset(
     name="load",
-    table="raw.hourly_load",
-    value_columns=("ts", "zone", "load_mw"),
+    table="raw.system_load",
+    value_columns=("ts", "zone", "load_mw", "interval_minutes"),
     conflict_key=("source", "zone", "ts"),
     to_values=_load_values,
 )
@@ -126,7 +168,15 @@ HOURLY_LMP = RawDataset(
     to_values=_lmp_values,
 )
 
-DATASETS: dict[str, RawDataset] = {ds.name: ds for ds in (HOURLY_LOAD, HOURLY_LMP)}
+HOURLY_WIND = RawDataset(
+    name="wind",
+    table="raw.hourly_wind",
+    value_columns=("ts", "gen_mw", "forecast_mw", "horizon_days"),
+    conflict_key=("source", "ts", "horizon_days"),
+    to_values=_wind_values,
+)
+
+DATASETS: dict[str, RawDataset] = {ds.name: ds for ds in (HOURLY_LOAD, HOURLY_LMP, HOURLY_WIND)}
 
 
 # ---------------------------------------------------------------------------
@@ -201,8 +251,11 @@ def upsert_rows(conn: Any, dataset: RawDataset, rows: Sequence[tuple[object, ...
 # normalization is testable without pandas/gridstatus installed.
 
 _TS_KEYS = ("Interval Start", "Time", "ts")
-_LOAD_KEYS = ("Load", "load", "load_mw")
+_TS_END_KEYS = ("Interval End",)
+_INTERVAL_MINUTES_KEYS = ("interval_minutes",)
+_LOAD_KEYS = ("Load", "load", "load_mw", "Native Load")
 _LMP_KEYS = ("LMP", "lmp")
+_WIND_KEYS = ("Wind", "gen_mw", "MW", "wind_mw")
 
 
 def _first(record: dict[str, object], keys: tuple[str, ...]) -> object:
@@ -212,18 +265,76 @@ def _first(record: dict[str, object], keys: tuple[str, ...]) -> object:
     raise KeyError(f"record missing any of {keys}: {sorted(record)}")
 
 
+def _interval_minutes_for(
+    record: dict[str, object], ts: datetime, *, default_interval_minutes: float | None
+) -> float:
+    """Derive interval_minutes, in order of authority (see LoadObservation docstring).
+
+    1. Interval End - Interval Start, when both are present on the record. Authoritative.
+    2. an explicit interval_minutes key on the record.
+    3. default_interval_minutes, if the caller supplied one.
+    4. otherwise raise -- no silent default. A wrong interval is a multiplicative
+       energy error.
+    """
+    end = record.get("Interval End")
+    if end is not None:
+        end_dt = _as_datetime(end)
+        return (end_dt - ts).total_seconds() / 60.0
+    if any(k in record and record[k] is not None for k in _INTERVAL_MINUTES_KEYS):
+        return float(_first(record, _INTERVAL_MINUTES_KEYS))  # type: ignore[arg-type]
+    if default_interval_minutes is not None:
+        return default_interval_minutes
+    raise ValueError(
+        f"cannot determine interval_minutes for record at ts={ts.isoformat()}: no "
+        f"'Interval End', no 'interval_minutes' key, and no default_interval_minutes "
+        f"supplied"
+    )
+
+
 def load_observations_from_records(
-    records: Iterable[dict[str, object]], zone: str
+    records: Iterable[dict[str, object]],
+    zone: str,
+    *,
+    default_interval_minutes: float | None = None,
 ) -> list[LoadObservation]:
-    """Normalize gridstatus load records into ``LoadObservation``s."""
-    return [
-        LoadObservation(
-            ts=_as_datetime(_first(r, _TS_KEYS)),
-            zone=zone,
-            load_mw=float(_first(r, _LOAD_KEYS)),  # type: ignore[arg-type]
+    """Normalize gridstatus load records into ``LoadObservation``s.
+
+    ``interval_minutes`` is derived per record (see ``_interval_minutes_for``), never
+    assumed to be hourly.
+    """
+    observations = []
+    for r in records:
+        ts = _as_datetime(_first(r, _TS_KEYS))
+        observations.append(
+            LoadObservation(
+                ts=ts,
+                zone=zone,
+                load_mw=float(_first(r, _LOAD_KEYS)),  # type: ignore[arg-type]
+                interval_minutes=_interval_minutes_for(
+                    r, ts, default_interval_minutes=default_interval_minutes
+                ),
+            )
         )
-        for r in records
-    ]
+    return observations
+
+
+def wind_observations_from_records(
+    records: Iterable[dict[str, object]], *, horizon_days: int = 0
+) -> list[WindObservation]:
+    """Normalize gridstatus EIA-930 fuel-type records into ``WindObservation``s.
+
+    Fail-loud on non-finite values: ``_handle_fuel_type_data`` fills absent fuel
+    columns with ``np.nan``, and ``float(nan)`` succeeds, so without this guard a
+    NaN would land in the database and silently poison any seasonal ratio.
+    """
+    observations = []
+    for r in records:
+        ts = _as_datetime(_first(r, _TS_KEYS))
+        gen_mw = float(_first(r, _WIND_KEYS))  # type: ignore[arg-type]
+        if not math.isfinite(gen_mw):
+            raise ValueError(f"non-finite wind value at ts={ts.isoformat()}")
+        observations.append(WindObservation(ts=ts, gen_mw=gen_mw, horizon_days=horizon_days))
+    return observations
 
 
 def lmp_observations_from_records(
@@ -307,11 +418,13 @@ def gridstatus_version() -> str:
 
 
 class ISONELoadSource:
-    """Live ISO-NE hourly load via ``gridstatus.ISONE().get_load(...)``.
+    """Live ISO-NE system load via ``gridstatus.ISONE().get_load(...)``.
 
-    Blocked on ISO-NE Web Services credentials. Structured so that once the
-    credentials land, ``get_observations`` "just works": it pulls, converts the
-    DataFrame to records, and normalizes via the tested pure adapter.
+    Credential-free: this hits the public ``fiveminutesystemload`` CSV feed, at
+    5-minute granularity (``Native Load``). The hourly ISO-NE Web Services feed
+    (``get_load_hourly``) is still blocked on credentials; when it lands, it can
+    write into the same ``raw.system_load`` table with ``interval_minutes = 60``
+    (docs/PLAN_EIA_EXTRACTOR.md Phase A4).
     """
 
     def __init__(self, zone: str = "ISONE") -> None:
@@ -335,15 +448,99 @@ class ISONELoadSource:
         return gridstatus_version()
 
 
+EIA_FUEL_TYPE_DATASET = "electricity/rto/fuel-type-data"
+EIA_ISONE_RESPONDENT = "ISNE"  # note: ISNE, not the ISO-NE zone label "ISONE"
+EIA_WIND_FUEL_TYPE = "WND"
+
+
+def _default_eia_client() -> Any:
+    """``gridstatus.EIA()`` — reads ``EIA_API_KEY`` from the environment itself, so
+    this process never binds the key to a name.
+
+    NEVER call ``.list_routes()``/``.list_facets()`` on the returned client: those
+    pass the key as a URL query parameter (``gridstatus/eia.py:84``), so any HTTP
+    error from them puts the key in the exception message. Enforced by a test
+    canary (``tests/test_etl_eia.py``), not just this comment.
+    """
+    return _import_gridstatus().EIA()
+
+
+class EIAWindSource:
+    """Live EIA-930 realized wind generation (ISO-NE respondent) via
+    ``gridstatus.EIA().get_dataset('electricity/rto/fuel-type-data', ...)``.
+
+    **No key is ever stored on the instance.** ``self._getenv`` is a callable, not
+    a mapping; ``vars()`` on this object therefore shows a function object, not a
+    credential. This is a plain class, not a ``@dataclass`` — a dataclass would
+    auto-generate a ``__repr__`` that prints every field, including any that later
+    held a credential.
+
+    **Residual risk, acknowledged rather than designed away.** Two paths could
+    still surface the key in a developer's terminal, neither reachable through the
+    shipped CLI: (1) enabling urllib3/``http.client`` DEBUG wire logging, which
+    prints request headers including ``X-Api-Key`` — nothing in ``owr`` configures
+    logging, so this requires a deliberate opt-in; (2) ``pytest -l``, ``--pdb``, or
+    IPython ``%debug`` printing frame locals — this method holds no key local by
+    design. Operator-side risks, not defects here.
+    """
+
+    source = "eia930.isne.wind"
+
+    def __init__(
+        self,
+        *,
+        respondent: str = EIA_ISONE_RESPONDENT,
+        fuel_type: str = EIA_WIND_FUEL_TYPE,
+        client_factory: Callable[[], Any] = _default_eia_client,
+        getenv: Callable[[str], str | None] = os.environ.get,
+    ) -> None:
+        self.respondent = respondent
+        self.fuel_type = fuel_type
+        self._client_factory = client_factory
+        self._getenv = getenv
+
+    def get_observations(self, start: date, end: date) -> list[object]:
+        require_eia_api_key(self._getenv)  # before the client is built (our message first)
+        client = self._client_factory()
+        frame = client.get_dataset(
+            EIA_FUEL_TYPE_DATASET,
+            start=start.isoformat(),
+            end=end.isoformat(),
+            frequency="hourly",
+            facets={"respondent": self.respondent, "fueltype": self.fuel_type},
+        )
+        records = frame.to_dict("records")
+        return list(wind_observations_from_records(records))
+
+    def describe_query(self, start: date, end: date) -> str:
+        return (
+            f"gridstatus.EIA().get_dataset('{EIA_FUEL_TYPE_DATASET}', "
+            f"start={start.isoformat()}, end={end.isoformat()}, frequency=hourly, "
+            f"facets={{respondent={self.respondent}, fueltype={self.fuel_type}}})\n"
+            f"[api key read from ${EIA_API_KEY_ENV}; value not recorded]"
+        )
+
+    def dataset_version(self) -> str:  # pragma: no cover - needs the library
+        return gridstatus_version()
+
+
 def source_for(dataset_name: str, *, zone: str = "ISONE") -> Source:
     """Factory: the live provider Source for a dataset name.
 
-    ``load`` is wired to ISO-NE. ``lmp`` (and future EIA datasets) raise a clear
-    NotImplementedError — the row/upsert layers already support them; only the
-    provider adapter remains, and it needs the same blocked credentials.
+    ``load`` is wired to ISO-NE, ``wind`` to EIA-930. ``lmp`` raises a clear
+    NotImplementedError — the row/upsert layers already support it; only the
+    provider adapter remains, and it needs credentials not yet provisioned.
     """
     if dataset_name == "load":
         return ISONELoadSource(zone=zone)
+    if dataset_name == "wind":
+        if zone not in ("ISONE", "ISNE"):
+            raise ValueError(
+                f"the wind dataset is EIA-930 balancing-authority data (respondent "
+                f"{EIA_ISONE_RESPONDENT}) and has no load zone; got --zone {zone!r}. "
+                f"Omit --zone or pass ISNE."
+            )
+        return EIAWindSource()
     if dataset_name in DATASETS:
         raise NotImplementedError(
             f"a live Source for dataset '{dataset_name}' is not wired yet; the "
@@ -360,13 +557,19 @@ def source_for(dataset_name: str, *, zone: str = "ISONE") -> Source:
 
 @dataclass(frozen=True)
 class ExtractResult:
-    """Summary of one extract call, for the CLI and callers."""
+    """Summary of one extract call, for the CLI and callers.
+
+    ``rows`` holds every built row (same column order as ``dataset.columns``), so
+    callers can serialize the batch (e.g. to CSV, Phase A3) without re-pulling.
+    ``rows_built`` stays for compatibility and is always ``len(rows)``.
+    """
 
     dataset: str
     rows_built: int
     rows_written: int
     provenance: Provenance
     dry_run: bool
+    rows: tuple[tuple[object, ...], ...] = ()
 
 
 def extract(
@@ -398,4 +601,5 @@ def extract(
         rows_written=written,
         provenance=provenance,
         dry_run=conn is None,
+        rows=tuple(rows),
     )
