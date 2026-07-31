@@ -458,6 +458,9 @@ uv run simulate --input examples/synthetic_winter_stress.csv \
 uv run --with uvicorn uvicorn owr.api.app:app --reload # API; OpenAPI docs at /docs
 docker compose up -d db                                # Postgres 16 + TimescaleDB
 uv run python -m owr.etl --help                        # ETL CLI (extract | transform | validate)
+uv run python -m owr.etl transform --input data/load_2023.csv --input data/load_2024.csv \
+  --input data/load_2025.csv --input data/load_2026.csv --input data/load_2022.csv
+                                                         # real winter p90 + stress windows
 ```
 
 The API and engine run with **no database and no credentials** — the API uses an in-memory
@@ -503,9 +506,11 @@ Postgres-backed store at runtime.
 # Session checkpoint — 2026-07-30
 
 Written mid-session as a safety net. **The SWE pipeline is in flight** — plan written and
-under adversarial review, no implementation started. Nothing is committed.
+under adversarial review, no implementation started at the time this checkpoint was written.
+*(Superseded — the work described below is now committed on `storage-physics-peak-window` as
+`b233670` and `6c6c3bf`; see "Data pull complete" below.)*
 
-## Working tree state (uncommitted)
+## Working tree state (uncommitted, at the time this checkpoint was written)
 
 | Path | State | What it is |
 |---|---|---|
@@ -513,7 +518,11 @@ under adversarial review, no implementation started. Nothing is committed.
 | `docs/source/2026-07-27_Overview_Document.pdf` | untracked | Mitchell's brief, stored verbatim, unedited |
 | `docs/PLAN_EIA_EXTRACTOR.md` | untracked | The plan under review (see below) |
 
-Branch: `storage-physics-peak-window`, still unmerged to `main`.
+*(Superseded — all of the above landed in commit `b233670`, "Add EIA wind extractor and
+daily-total stress threshold pipeline". Commit `6c6c3bf`, "Record real p90 thresholds, brief
+audit, and the source document", followed it.)*
+
+Branch: `storage-physics-peak-window`, still unmerged to `main`. `main` is at `29ccdd6`.
 
 ## Environment change made this session
 
@@ -651,9 +660,9 @@ is 385,833 MWh/day.** Full detail, provenance, and cross-checks are in the
 
 - `data/load_{2022..2026}.csv` — raw 5-minute pulls, **gitignored** (`data/` in
   `.gitignore`). 324,043 intervals total. `load_2022.csv` is header-only (0 rows).
-- The analysis was driven by a throwaway script, **not** committed:
-  `~/.claude/jobs/6f45afca/tmp/p90_analysis.py`. It calls the tested
-  `owr.etl.daily` / `owr.etl.transform` modules. Recreate it or wire the CLI (below).
+- The analysis was originally driven by a throwaway script outside the repo, since discarded.
+  It is now reproducible from the repo: `etl transform` calls the same tested
+  `owr.etl.daily` / `owr.etl.transform` modules. See "How to run it" for the command.
 
 ## Results
 
@@ -695,11 +704,24 @@ written into the definition, and stated wherever the event list is published.
 
 ## Still outstanding
 
-1. **`etl transform` is NOT wired** — it still prints "not implemented yet". The modules
-   (`transform.py`, `daily.py`, `seasons.py`) are built and tested; only the CLI subcommand
-   wiring is missing. This is the next implementation step.
+1. ~~**`etl transform` is NOT wired**~~ — **done.** `etl transform` now reads one or more
+   rows CSVs, pools them, rolls up to daily totals, computes the percentile threshold, and
+   finds stress windows per winter, with `--out` (daily CSV) and `--format text|json`. The
+   real p90 figures above are now reproducible from the CLI, not just the throwaway script:
+   ```
+   uv run python -m owr.etl transform --input data/load_2023.csv --input data/load_2024.csv \
+     --input data/load_2025.csv --input data/load_2026.csv --input data/load_2022.csv
+   ```
+   Reproduces threshold_mwh = 385832.584, population_days = 270, and the 4-event/3-winter
+   window list above, including the 11-day 2026-01-24 → 2026-02-03 event. Stress-window
+   detection is winter-only by construction: `--season summer` (or `shoulder`) reports the
+   threshold as normal but returns no windows, with an explicit not-computed marker in both
+   text and JSON output, rather than mislabeling winter windows against the wrong threshold.
 2. Plan questions **Q8** (should the API reject non-consecutive day lists?) and **Q9**
    (`features.daily_load` needs 5 new columns — migration 006).
-3. **Nothing from 2026-07-30 is committed.**
+3. ~~**Nothing from 2026-07-30 is committed.**~~ Committed as `b233670` (EIA wind extractor +
+   daily-total stress threshold pipeline) and `6c6c3bf` (real p90 thresholds, brief audit,
+   source document), on `storage-physics-peak-window`. **Not merged** — `main` is still at
+   `29ccdd6`; the merge is a separate step, not done here.
 4. Merge `storage-physics-peak-window` to `main`.
 5. EIA wind extractor is built but has never been run — needs `EIA_API_KEY` in `.env`.

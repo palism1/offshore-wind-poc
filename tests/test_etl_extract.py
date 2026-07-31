@@ -490,11 +490,15 @@ def test_cli_extract_out_without_dsn_or_dry_run_still_errors_on_dsn(capsys, monk
     assert "no database DSN" in capsys.readouterr().out
 
 
-def test_cli_transform_and_validate_are_scaffolded(capsys):
-    for step in ("transform", "validate"):
-        code = cli.main([step])
-        assert code == 1
-        assert f"etl {step}: not implemented yet" in capsys.readouterr().out
+def test_cli_validate_is_scaffolded(capsys):
+    code = cli.main(["validate"])
+    assert code == 1
+    assert "etl validate: not implemented yet" in capsys.readouterr().out
+
+
+def test_cli_transform_requires_input(capsys):
+    with pytest.raises(SystemExit):
+        cli.main(["transform"])
 
 
 def test_cli_requires_a_subcommand():
