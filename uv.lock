@@ -537,6 +537,10 @@ wheels = [
 name = "owr"
 version = "0.1.0"
 source = { editable = "." }
+dependencies = [
+    { name = "numpy" },
+    { name = "pandas" },
+]
 
 [package.optional-dependencies]
 api = [
@@ -562,6 +566,8 @@ dev = [
 requires-dist = [
     { name = "fastapi", marker = "extra == 'api'", specifier = ">=0.110" },
     { name = "gridstatus", marker = "extra == 'etl'", specifier = ">=0.30" },
+    { name = "numpy", specifier = ">=1.26" },
+    { name = "pandas", specifier = ">=2.2" },
     { name = "psycopg", extras = ["binary"], marker = "extra == 'api'", specifier = ">=3.1" },
     { name = "psycopg", extras = ["binary"], marker = "extra == 'etl'", specifier = ">=3.1" },
     { name = "uvicorn", marker = "extra == 'api'", specifier = ">=0.29" },

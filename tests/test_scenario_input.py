@@ -328,3 +328,43 @@ def test_non_consecutive_dates_rejected():
     content = _csv("date,hour,load_mw", day1, day2)
     with pytest.raises(ScenarioInputError, match="not consecutive"):
         read_day_profiles(io.StringIO(content), origin="test")
+
+
+# --------------------------------------------------------------------------- #
+# Phase 6 — pandas.read_csv migration, admitted behavior changes A1, A2, A4
+# --------------------------------------------------------------------------- #
+
+
+def test_duplicate_header_column_first_wins():
+    lines = [f"2026-01-10,{h},8000.0,1.0" for h in HOURS]
+    content = _csv("date,hour,load_mw,load_mw", lines)
+    result = read_day_profiles(io.StringIO(content), origin="test")
+    assert result.days[0].hourly_load_mw[0] == 8000.0
+
+
+@pytest.mark.parametrize("bad_row_position", ["first", "second"])
+def test_over_long_data_row_is_rejected_at_any_position(bad_row_position):
+    good_lines = _rows("2026-01-10", _flat_load())
+    long_row = good_lines[0] + ",extra"
+    if bad_row_position == "first":
+        lines = [long_row] + good_lines[1:]
+    else:
+        lines = [good_lines[0], long_row] + good_lines[2:]
+    content = _csv("date,hour,load_mw", lines)
+    with pytest.raises(ScenarioInputError, match="cannot parse as CSV"):
+        read_day_profiles(io.StringIO(content), origin="test")
+
+
+def test_unclosed_quote_is_rejected():
+    good_lines = _rows("2026-01-10", _flat_load())
+    good_lines[0] = good_lines[0] + ',"1'
+    content = _csv("date,hour,load_mw,note", good_lines)
+    with pytest.raises(ScenarioInputError):
+        read_day_profiles(io.StringIO(content), origin="test")
+
+
+def test_blank_header_cell_still_reports_the_missing_column():
+    lines = _rows("2026-01-10", _flat_load())
+    content = _csv("date,,load_mw", lines)
+    with pytest.raises(ScenarioInputError, match="hour"):
+        read_day_profiles(io.StringIO(content), origin="test")

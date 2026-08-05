@@ -2,8 +2,12 @@
     "find X or more consecutive days above the severity percentile".
 """
 
+import random
 from dataclasses import dataclass
 from datetime import date, timedelta
+
+import numpy
+import pytest
 
 from owr.models import HOURS_PER_DAY, DayProfile
 from owr.stress_finder import (
@@ -11,6 +15,21 @@ from owr.stress_finder import (
     find_stress_windows_at_threshold,
     percentile_threshold,
 )
+
+
+def _retired_percentile_threshold(values: list[float], percentile: float) -> float:
+    """A local copy of the hand-rolled formula this module retired in phase 2 of
+    docs/PLAN_PANDAS_ADOPTION.md. Kept here only as a reference for the migration
+    tests below.
+    """
+    ordered = sorted(values)
+    if len(ordered) == 1:
+        return ordered[0]
+    rank = percentile * (len(ordered) - 1)
+    low = int(rank)
+    high = min(low + 1, len(ordered) - 1)
+    frac = rank - low
+    return ordered[low] + (ordered[high] - ordered[low]) * frac
 
 
 def _day(day_index: int, flat_load_mw: float) -> DayProfile:
@@ -110,3 +129,46 @@ def test_threshold_split_reproduces_find_stress_windows():
     assert find_stress_windows_at_threshold(days, threshold, 2) == find_stress_windows(
         days, severity_percentile=0.9, min_window_days=2
     )
+
+
+def _seeded_cases():
+    rng = random.Random(7)
+    percentiles = [0.0, 0.5, 0.75, 0.9, 0.95, 1.0]
+    cases = []
+    for _ in range(2000):
+        n = rng.randint(2, 40)
+        values = [rng.uniform(0, 600000) for _ in range(n)]
+        percentile = rng.choice(percentiles) if rng.random() < 0.5 else rng.random()
+        cases.append((values, percentile))
+    return cases
+
+
+def test_percentile_matches_reference_implementation():
+    for values, percentile in _seeded_cases():
+        expected = _retired_percentile_threshold(values, percentile)
+        assert percentile_threshold(values, percentile) == pytest.approx(expected, rel=1e-12)
+
+
+def test_percentile_returns_builtin_float():
+    assert type(percentile_threshold([1.0, 2.0], 0.5)) is float
+
+
+def test_percentile_accepts_a_numpy_array():
+    assert percentile_threshold(numpy.array([1.0, 2.0, 3.0, 4.0]), 0.5) == 2.5
+
+
+def test_percentile_empty_raises_value_error():
+    with pytest.raises(ValueError, match="values must be non-empty"):
+        percentile_threshold([], 0.5)
+
+
+def test_percentile_out_of_range_raises_value_error():
+    with pytest.raises(ValueError, match=r"percentile must be in \[0, 1\]"):
+        percentile_threshold([1.0, 2.0], 1.5)
+
+
+def test_stress_set_is_unchanged_under_the_new_percentile():
+    for values, percentile in _seeded_cases():
+        old = _retired_percentile_threshold(values, percentile)
+        new = percentile_threshold(values, percentile)
+        assert [v >= old for v in values] == [v >= new for v in values]

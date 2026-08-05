@@ -1,7 +1,7 @@
 """Tests for the Phase 2 ETL extract skeleton (docs/PLAN.md Phase 2 step 1).
 
-Everything here runs offline with fixtures/mocks: no gridstatus, no pandas, no
-network, no credentials, no live database. The provider boundary is a fake
+Everything here runs offline with fixtures/mocks: no gridstatus and no credentials,
+no network, no live database. The provider boundary is a fake
 ``Source``; the database is a fake connection that records ``executemany`` calls.
 What is under test is exactly the plan's three requirements — transform-to-rows,
 idempotent upsert keying, and provenance stamping — plus the CLI wiring.
@@ -12,6 +12,7 @@ from __future__ import annotations
 import argparse
 from datetime import UTC, date, datetime
 
+import pandas as pd
 import pytest
 
 from owr.etl import cli
@@ -27,6 +28,7 @@ from owr.etl.extract import (
     extract,
     lmp_observations_from_records,
     load_observations_from_records,
+    records_from_frame,
     source_for,
     upsert_rows,
 )
@@ -307,6 +309,20 @@ def test_lmp_records_normalize():
     ts = datetime(2026, 1, 10, 7, tzinfo=UTC)
     obs = lmp_observations_from_records([{"Time": ts, "LMP": 42.5}], zone="ISONE")
     assert obs == [LmpObservation(ts=ts, zone="ISONE", lmp=42.5)]
+
+
+def test_records_from_frame_round_trips_a_real_dataframe():
+    ts = pd.Timestamp("2026-01-10T05:00:00Z")
+    frame = pd.DataFrame({"Interval Start": [ts], "Load": [8123.4]})
+    records = records_from_frame(frame)
+    obs = load_observations_from_records(records, zone="ISONE", default_interval_minutes=60.0)
+    assert obs[0].ts == ts.to_pydatetime()
+    assert obs[0].load_mw == 8123.4
+
+
+def test_records_from_frame_rejects_a_non_frame():
+    with pytest.raises(TypeError):
+        records_from_frame({"not": "a frame"})
 
 
 # --------------------------------------------------------------------------- #

@@ -4,7 +4,10 @@ version = "0.1.0"
 description = "Offshore Wind Reserve scenario-simulation tool (ISO-NE / Boston POC) — Software & Infrastructure Lead deliverables"
 readme = "README.md"
 requires-python = ">=3.12"
-dependencies = []
+dependencies = [
+    "pandas>=2.2",
+    "numpy>=1.26",
+]
 
 [project.scripts]
 # Phase 2 ETL CLI: `etl extract | transform | validate`. Only `extract` is
@@ -14,9 +17,10 @@ etl = "owr.etl.cli:main"
 simulate = "owr.cli:main"
 
 [project.optional-dependencies]
-# ETL / DB / API dependencies land in later phases (Phase 2+). The Phase 3
-# simulation engine is intentionally pure-Python with no third-party runtime deps
-# so it stays fully testable offline, before any ISO-NE/EIA credentials exist.
+# The engine takes pandas and numpy as data structure and numeric dependencies,
+# and stays free of file access, network access, database access and provider
+# code, so it remains fully testable offline before any ISO-NE or EIA
+# (Energy Information Administration) credential exists.
 etl = [
     "gridstatus>=0.30",
     "psycopg[binary]>=3.1",

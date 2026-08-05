@@ -331,6 +331,19 @@ def test_transform_bad_header_rejected(tmp_path, capsys):
     assert "error:" in out
 
 
+def test_row_missing_a_trailing_cell_exits_two_not_traceback(tmp_path, capsys):
+    path = tmp_path / "short_row.csv"
+    header = "ts,zone,load_mw,interval_minutes,source,retrieved_at,source_query,dataset_version"
+    short_row = "2023-01-01T00:00:00-05:00,ISONE,1000.0,60.0,src,2026-01-01T00:00:00+00:00,q"
+    path.write_text(f"{header}\n{short_row}\n")
+
+    code, _ = _run(["transform", "--input", str(path)])
+    out = capsys.readouterr().out
+
+    assert code == 2
+    assert out.startswith("error:")
+
+
 def test_transform_missing_file_rejected(tmp_path, capsys):
     missing = tmp_path / "does_not_exist.csv"
 
@@ -400,6 +413,66 @@ def test_transform_out_writes_daily_csv(tmp_path, capsys):
 # --------------------------------------------------------------------------- #
 # Parser wiring                                                                #
 # --------------------------------------------------------------------------- #
+
+
+def test_transform_out_daily_csv_is_byte_identical_to_the_expected_text(tmp_path, capsys):
+    in_path = tmp_path / "load.csv"
+    out_path = tmp_path / "daily.csv"
+    dates = [f"2023-01-{d:02d}" for d in range(1, 4)]
+    _write_fixture(in_path, dates, {d: 1000.0 for d in dates})
+
+    code, _ = _run(["transform", "--input", str(in_path), "--out", str(out_path)])
+    capsys.readouterr()
+
+    assert code == 0
+    expected = (
+        b"date,load_mwh,hours_covered,expected_hours,intervals,complete,season,winter_label\r\n"
+        b"2023-01-01,24000.0,24.0,24.0,24,True,winter,2022/23\r\n"
+        b"2023-01-02,24000.0,24.0,24.0,24,True,winter,2022/23\r\n"
+        b"2023-01-03,24000.0,24.0,24.0,24,True,winter,2022/23\r\n"
+    )
+    assert out_path.read_bytes() == expected
+
+
+def test_transform_json_keeps_a_winter_with_no_window(tmp_path, capsys):
+    path = tmp_path / "load.csv"
+    winter_a_dates = [f"2023-01-{d:02d}" for d in range(1, 11)]
+    winter_b_dates = [f"2024-01-{d:02d}" for d in range(1, 11)]
+    mw_by_date = {d: 1000.0 for d in winter_a_dates + winter_b_dates}
+    # push winter A's last two days above the rest so a 2-day stress window is
+    # detected there; winter B stays flat and qualifies for no window.
+    mw_by_date[winter_a_dates[-1]] = 5000.0
+    mw_by_date[winter_a_dates[-2]] = 5000.0
+    _write_fixture(path, winter_a_dates + winter_b_dates, mw_by_date)
+
+    code, _ = _run(
+        ["transform", "--input", str(path), "--min-window-days", "2", "--format", "json"]
+    )
+    out = capsys.readouterr().out
+
+    assert code == 0
+    payload = json.loads(out)
+    assert set(payload["windows"]) == {"2022/23", "2023/24"}
+    assert payload["windows"]["2023/24"] == []
+    assert len(payload["windows"]["2022/23"]) == 1
+
+
+def test_transform_json_days_field_is_a_plain_int(tmp_path, capsys):
+    path = tmp_path / "load.csv"
+    winter_dates = [f"2023-01-{d:02d}" for d in range(1, 11)]
+    mw_by_date = {d: 1000.0 for d in winter_dates}
+    mw_by_date[winter_dates[-1]] = 5000.0
+    mw_by_date[winter_dates[-2]] = 5000.0
+    _write_fixture(path, winter_dates, mw_by_date)
+
+    code, _ = _run(
+        ["transform", "--input", str(path), "--min-window-days", "2", "--format", "json"]
+    )
+    out = capsys.readouterr().out
+
+    assert code == 0
+    payload = json.loads(out)
+    assert type(payload["windows"]["2022/23"][0]["days"]) is int
 
 
 def test_cli_parser_dispatches_transform():

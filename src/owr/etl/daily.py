@@ -1,6 +1,6 @@
 """Interval readings -> daily energy, correctly (docs/PLAN_EIA_EXTRACTOR.md Phase B2).
 
-Pure; stdlib ``zoneinfo`` only, no new dependency.
+Pure; no file, network or database access. Uses stdlib ``zoneinfo`` and ``pandas``.
 
 Specification, point by point:
 
@@ -28,9 +28,12 @@ Specification, point by point:
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, time, timedelta
 from zoneinfo import ZoneInfo
+
+import pandas as pd
 
 EASTERN = ZoneInfo("America/New_York")
 
@@ -116,3 +119,29 @@ def daily_loads_from_readings(
             )
         )
     return results
+
+
+DAILY_CORE_COLUMNS: tuple[str, ...] = (
+    "date", "load_mwh", "hours_covered", "expected_hours", "intervals", "complete",
+)
+
+
+def daily_frame(loads: Sequence[DailyLoad]) -> pd.DataFrame:
+    """The Component 2 daily contract as a frame, one row per local calendar date.
+
+    ``date`` holds ``datetime.date`` objects in an ``object`` column, never
+    ``datetime64``. The engine does calendar arithmetic with ``timedelta(days=1)``,
+    formats with ``date.isoformat()``, and uses dates as dictionary keys; a
+    ``Timestamp`` changes all three.
+    """
+    return pd.DataFrame(
+        {
+            "date": pd.Series([d.date for d in loads], dtype="object"),
+            "load_mwh": pd.Series([d.load_mwh for d in loads], dtype="float64"),
+            "hours_covered": pd.Series([d.hours_covered for d in loads], dtype="float64"),
+            "expected_hours": pd.Series([d.expected_hours for d in loads], dtype="float64"),
+            "intervals": pd.Series([d.intervals for d in loads], dtype="int64"),
+            "complete": pd.Series([d.complete for d in loads], dtype="bool"),
+        },
+        columns=list(DAILY_CORE_COLUMNS),
+    )

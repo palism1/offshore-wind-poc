@@ -39,6 +39,18 @@ decision, see Open decisions below) · `reference` (informs design, not ingested
 Additional diagram/imagery references live in `DIAGRAM_REFERENCES.md`; claim-verification
 sources live in `FACT_CHECK_REPORT.md`. This file is for ingest and data provenance only.
 
+## Percentile computation change — 2026-08-05
+
+`stress_finder.percentile_threshold` now calls `numpy.quantile` instead of a hand-rolled
+linear-interpolation formula (`docs/PLAN_PANDAS_ADOPTION.md` phase 2). The two implementations
+differ by at most about 1e-15 relative, measured over 20,000 random series. The set of days
+classified as stressed is provably unchanged: 200,000 adversarial trials found zero stress-set
+flips (full argument in `stress_finder.py`'s `percentile_threshold` docstring).
+
+The recorded winter p90 threshold, **385,832.584 MWh/day** (see "Data pull complete" in
+`docs/HANDOFF.md`), is unchanged at the three decimal places the CLI prints. A fresh
+`etl transform` run over the same input reproduces the same figure.
+
 ## Onboarding / team resources
 
 | Resource | URL |
@@ -243,3 +255,55 @@ Pending Mitchell's choice, the modeling default is 30 m + 200 m + ~5 MWh + 1.67 
 One further point for `config.py`: `P = ρ·g·Q·h·η` is the **generating** form. Pumping is
 `P = ρ·g·Q·h / η`. Whether 0.70 is the round-trip figure (→ ~0.837 each way) or the one-way
 turbine figure (→ ~0.49 round-trip) must be stated before it becomes `default_efficiency`.
+
+### 2026-07-31: published sphere geometry found — the 0.5–1.0 m wall band is wrong
+
+Source: Bernhard Ernst (Fraunhofer IEE), *StEnSea: Stored Energy in the Sea*, I Congreso de
+Sistemas Eléctricos Aislados, Tenerife, 2024-11-21. Slide "StEnSea – Technical data (scale
+1:1)", geometry credited to Hochtief, 2017.
+<https://intranet.coiitf.es/images/stories/SEATF/05.%20Ernst%20Bernhard%20-%202024_11_21_Teneriffa_StEnSea_Fraunhofer_Ernst_small.pdf>
+(read in full; the slide is a table plus an FE strain plot carrying the inner-diameter dimension)
+
+Published 1:1 figures: concrete; turbine power 5 MW; discharge time 4.2 h; **discharge
+capacity 21 MWh**; efficiency **70–80%**; diameter "ca. 30"; **wall thickness 2.7 m**;
+**volume 12,000 m³**; pressure **70 bar / 700 m**; weight 20,000 t (> buoyancy). The FE
+figure labels **inner diameter 28.60 m**, so "ca. 30 m" is the nominal/inner figure and the
+**outer diameter is ~34.0 m**.
+
+Two independent consistency checks on that geometry:
+
+- π/6 × 28.60³ = 12,249 m³ against the published 12,000 m³ working volume.
+- shell volume π/6 × (34.0³ − 28.60³) = 8,331 m³; against the published 20,000 t that implies
+  **2,401 kg/m³**, i.e. reinforced concrete. The 2.7 m wall is load-bearing, not a typo.
+
+The 1:3 unit corroborates: 9 m outer, 0.5 m wall → π/6 × 8³ = 268 m³ against a published
+270 m³.
+
+**Consequences.**
+
+1. **The 0.5–1.0 m wall band used throughout this file and in `tests/test_storage_physics.py`
+   is 3–5× too thin.** Real `t/D_outer` is **0.079** (1:1) and **0.056** (1:3); the assumed
+   band is 0.017–0.033.
+2. **Energy results survive by coincidence.** The model's 30 m-outer sphere at a 0.5–1.0 m
+   wall gives 11,494–12,770 m³ internal, which brackets the true 12,000 m³ of a 34 m-outer
+   sphere with a 2.7 m wall. Volume is right, geometry is not. At the published 12,000 m³ the
+   shallow variant is **4.79 MWh** at 200 m / η=0.70, inside the 4.5–5.0 MWh band already
+   recorded above.
+3. **The "one big sphere uses less concrete" argument collapses.** With `t = k·D`, shell
+   volume is `π/6·D³·[1 − (1−2k)³]` and internal volume is `π/6·D³·(1−2k)³`, so concrete per
+   m³ of storage is `[1 − (1−2k)³]/(1−2k)³` — **independent of D**. At Fraunhofer's own
+   k = 0.0794, both a single sphere sized for 51,146 m³ internal (46.1 m inner / 54.7 m outer
+   / 4.35 m wall) and 4.18 Fraunhofer-geometry spheres come to **34,785 m³ of concrete**,
+   ratio **1.0000**. The 38% saving claimed for a single 47 m sphere depends entirely on
+   holding the wall at 0.5 m while the diameter grows 57%.
+4. **η = 0.70 is confirmed conservative-but-published** — it is the bottom of Fraunhofer's own
+   stated 70–80% band, not below it.
+5. The headline capacity is **21 MWh**, not 20. The 20 MWh figure used in `[4]` and in the
+   `config.py` default comes from the scale table on a later slide, which rounds. Either is
+   defensible; state which.
+
+**Open.** No wall thickness or pressure rating is published for a 200 m-rated sphere, and
+70 bar / 700 m is the only rating point given. A shallow variant sees ~20 bar, so its wall
+should be thinner than 2.7 m — but the scaling law between the two is not in this source and
+should not be invented. Sizing the shallow variant's wall is the remaining blocker on any
+concrete-volume or cost comparison.

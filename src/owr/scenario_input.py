@@ -25,15 +25,34 @@ definition in the ``DayProfile`` docstring is not usable, since ``docs/HANDOFF.m
 records the seasonal denominators as underivable and forbids hard-coding them.
 ``wind_forecast_frac`` absent defaults to 0.0 (the ``DayProfile`` default): it
 cannot be derived without a wind nameplate capacity, which is not an input.
+
+Parsed by ``pandas.read_csv`` with ``dtype=str`` and ``na_filter=False``, so every
+cell reaches the validation below as the token the file carried. Three behaviors
+differ from the retired ``csv.DictReader``:
+
+* A data row with more fields than the header is rejected, at any row position.
+  ``csv.DictReader`` accepted it and stored the extra field under the ``None`` key.
+* A file with an unclosed quoted field is rejected. ``csv.DictReader`` swallowed the
+  rest of the file into one field.
+* A header that repeats a column name resolves to the first occurrence, because
+  pandas renames the second to ``name.1``. ``csv.DictReader`` kept the last. Neither
+  reader raises.
+
+A blank header cell is named ``Unnamed: <position>`` by pandas, where
+``csv.DictReader`` named it ``""``. Neither name is a required or optional column, so
+both readers report the same missing-column error for such a header.
 """
 
 from __future__ import annotations
 
-import csv
+import io
 import math
+import warnings as warnings_mod
 from dataclasses import dataclass
 from datetime import date, timedelta
 from typing import TextIO
+
+import pandas as pd
 
 from owr.models import HOURS_PER_DAY, DayProfile
 
@@ -103,10 +122,20 @@ def read_day_profiles(stream: TextIO, *, origin: str) -> DayProfileSet:
     linenos = [n for n, _ in filtered]
     lines = [line for _, line in filtered]
 
-    reader = csv.DictReader(lines)
-    if reader.fieldnames is None:
+    try:
+        with warnings_mod.catch_warnings():
+            warnings_mod.simplefilter("error", pd.errors.ParserWarning)
+            frame = pd.read_csv(
+                io.StringIO("".join(lines)),
+                dtype=str,
+                na_filter=False,
+                index_col=False,
+            )
+    except (pd.errors.ParserError, pd.errors.EmptyDataError, pd.errors.ParserWarning) as exc:
+        raise _err(origin, None, f"cannot parse as CSV: {exc}") from exc
+    if frame.columns.empty:
         raise _err(origin, None, "missing header row")
-    fieldmap = {name.strip().lower(): name for name in reader.fieldnames}
+    fieldmap = {str(name).strip().lower(): str(name) for name in frame.columns}
 
     missing = [c for c in REQUIRED_COLUMNS if c not in fieldmap]
     if missing:
@@ -119,7 +148,7 @@ def read_day_profiles(stream: TextIO, *, origin: str) -> DayProfileSet:
     warnings: list[str] = []
 
     # rows[i] corresponds to data line linenos[i + 1] (line 1 was the header).
-    raw_rows = list(reader)
+    raw_rows = frame.to_dict("records")
     if not raw_rows:
         raise _err(origin, None, "no data rows")
 

@@ -13,17 +13,30 @@ Ties together ``owr.etl.daily``, ``owr.etl.seasons``, and ``owr.stress_finder``:
   of a winter safely splits a run instead of merging across the gap. Neither
   mechanism raises on a gap; gaps are reported by ``validate`` (Phase B4), not
   fatal here.
+
+docs/PLAN_PANDAS_ADOPTION.md phase 5 moved the daily and event tables onto
+``pandas.DataFrame``. ``daily_loads_from_readings`` (owr.etl.daily) still
+accumulates with Python ``sum()``; only the table assembly, filtering and
+rendering below is pandas.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import date
+from typing import NamedTuple
 
-from owr.etl.daily import DailyLoad
+import pandas as pd
+
+from owr.etl.daily import DAILY_CORE_COLUMNS
 from owr.etl.seasons import Season, season_for, winter_label
-from owr.models import StressWindow
 from owr.stress_finder import find_stress_windows_at_threshold, percentile_threshold
+
+DAILY_FRAME_COLUMNS: tuple[str, ...] = DAILY_CORE_COLUMNS + ("season", "winter_label")
+
+EVENT_FRAME_COLUMNS: tuple[str, ...] = (
+    "winter_label", "event_start_date", "event_end_date", "event_duration_days",
+)
 
 
 @dataclass(frozen=True)
@@ -38,48 +51,120 @@ class ThresholdResult:
     max_mwh: float
 
 
+def add_season_columns(frame: pd.DataFrame) -> pd.DataFrame:
+    """Return a new frame with ``season`` and ``winter_label`` appended.
+
+    Never mutates the input. The architecture doc's Global Interface Contract says a
+    component shall never modify another component's output.
+    """
+    out = frame.copy()
+    out["season"] = pd.Series(
+        [season_for(d).value for d in frame["date"]], index=frame.index, dtype="object"
+    )
+    out["winter_label"] = pd.Series(
+        [winter_label(d) for d in frame["date"]], index=frame.index, dtype="object"
+    )
+    return out
+
+
+def winter_labels(daily: pd.DataFrame) -> tuple[str, ...]:
+    """Every winter label present in ``daily``, sorted, duplicates removed.
+
+    Filter on ``winter_label`` being present, and **do not** filter on ``complete``.
+    The retired ``find_windows_per_winter`` grouped by label before it dropped
+    incomplete days, so a winter whose days are all incomplete still produced a key
+    with an empty list. The ETL CLI emits one JSON entry per label returned here, so
+    this function is the sole reason a winter with zero events keeps its key.
+    """
+    return tuple(sorted(daily.loc[daily["winter_label"].notna(), "winter_label"].unique()))
+
+
 def compute_threshold(
-    daily: list[DailyLoad], *, percentile: float, season: Season
+    daily: pd.DataFrame, *, percentile: float, season: Season
 ) -> ThresholdResult:
     """p90 (or given percentile) over complete days of one season, pooled across
     however many years ``daily`` spans. Incomplete days are excluded from the
-    population and reported (not fatal — see ``owr.etl.daily`` point 9)."""
-    in_season = [d for d in daily if season_for(d.date) == season]
-    population = [d for d in in_season if d.complete]
-    excluded = tuple(sorted(d.date for d in in_season if not d.complete))
+    population and reported (not fatal — see ``owr.etl.daily`` point 9).
 
-    values = [d.load_mwh for d in population]
-    if not values:
+    Takes the frame that :func:`add_season_columns` produced, and keeps its
+    current order of operations exactly: mask on season, split on ``complete``,
+    raise before any aggregation touches an empty population (``Series.min()``
+    on an empty series returns ``NaN`` instead of raising).
+    """
+    in_season = daily[daily["season"] == season.value]
+    population = in_season[in_season["complete"]]
+    excluded = in_season[~in_season["complete"]]
+    excluded_incomplete = tuple(sorted(excluded["date"]))
+
+    if len(population.index) == 0:
         raise ValueError(f"no complete {season} days in the input population")
+
+    values = population["load_mwh"].to_numpy()
     threshold = percentile_threshold(values, percentile)
-    ordered = sorted(values)
 
     return ThresholdResult(
         percentile=percentile,
         threshold_mwh=threshold,
-        population_days=len(population),
+        population_days=int(len(population.index)),
         season=season,
-        excluded_incomplete=excluded,
-        min_mwh=ordered[0],
+        excluded_incomplete=excluded_incomplete,
+        min_mwh=float(values.min()),
         median_mwh=percentile_threshold(values, 0.5),
-        max_mwh=ordered[-1],
+        max_mwh=float(values.max()),
     )
 
 
-def find_windows_per_winter(
-    daily: list[DailyLoad], *, threshold_mwh: float, min_window_days: int
-) -> dict[str, list[StressWindow]]:
-    """Group ``daily`` by ``winter_label`` (days outside winter are dropped) and
-    find stress windows within each winter at the shared pooled threshold."""
-    by_winter: dict[str, list[DailyLoad]] = {}
-    for d in daily:
-        label = winter_label(d.date)
-        if label is None:
-            continue
-        by_winter.setdefault(label, []).append(d)
+class _DailyPoint(NamedTuple):
+    """A minimal ``DailyLoadLike`` built from one event-frame row."""
 
-    result: dict[str, list[StressWindow]] = {}
-    for label, days in by_winter.items():
-        ordered = sorted((d for d in days if d.complete), key=lambda d: d.date)
-        result[label] = find_stress_windows_at_threshold(ordered, threshold_mwh, min_window_days)
-    return result
+    date: date
+    load_mwh: float
+
+
+def find_windows_per_winter(
+    daily: pd.DataFrame, *, threshold_mwh: float, min_window_days: int
+) -> pd.DataFrame:
+    """The Component 3 event table: one row per stress window, grouped by winter.
+
+    **The event frame carries only event rows.** A winter with no event contributes
+    no row, by design. The label set lives in :func:`winter_labels`, and the CLI
+    joins the two. Do not try to recover the label set from the event frame; that
+    is the defect docs/PLAN_PANDAS_ADOPTION.md revision 1 fixes (finding B1).
+
+    The doc calls the identifier ``winter_id`` and describes it as a hash. This
+    repo has a readable label and no hash; ``winter_label`` stays, and no
+    ``event_id`` column is added.
+    """
+    complete = daily[daily["complete"] & daily["winter_label"].notna()]
+
+    winter_frames: list[pd.DataFrame] = []
+    for label, group in complete.groupby("winter_label"):
+        ordered = group.sort_values("date")
+        points = [
+            _DailyPoint(date=row.date, load_mwh=row.load_mwh) for row in ordered.itertuples()
+        ]
+        windows = find_stress_windows_at_threshold(points, threshold_mwh, min_window_days)
+        for w in windows:
+            winter_frames.append(
+                {
+                    "winter_label": label,
+                    "event_start_date": w.start,
+                    "event_end_date": w.end,
+                    "event_duration_days": w.days,
+                }
+            )
+
+    if not winter_frames:
+        return pd.DataFrame(
+            {
+                "winter_label": pd.Series([], dtype="object"),
+                "event_start_date": pd.Series([], dtype="object"),
+                "event_end_date": pd.Series([], dtype="object"),
+                "event_duration_days": pd.Series([], dtype="int64"),
+            },
+            columns=list(EVENT_FRAME_COLUMNS),
+        )
+
+    events = pd.DataFrame(winter_frames, columns=list(EVENT_FRAME_COLUMNS))
+    events["event_duration_days"] = events["event_duration_days"].astype("int64")
+    return events.sort_values(["winter_label", "event_start_date"]).reset_index(drop=True)

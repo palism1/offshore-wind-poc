@@ -7,7 +7,14 @@ from datetime import UTC, date, datetime, time, timedelta
 
 import pytest
 
-from owr.etl.daily import EASTERN, IntervalReading, daily_loads_from_readings, local_day_hours
+from owr.etl.daily import (
+    DAILY_CORE_COLUMNS,
+    EASTERN,
+    IntervalReading,
+    daily_frame,
+    daily_loads_from_readings,
+    local_day_hours,
+)
 
 
 def _local_midnight_utc(day: date) -> datetime:
@@ -140,3 +147,41 @@ def test_day_missing_two_hours_is_incomplete():
     days = daily_loads_from_readings(trimmed)
     assert days[0].complete is False
     assert days[0].hours_covered == pytest.approx(22.0)
+
+
+def test_daily_frame_columns_dtypes_and_row_order():
+    start = datetime(2025, 6, 10, 0, tzinfo=UTC)
+    readings = [
+        IntervalReading(ts=start + timedelta(days=d, hours=h), load_mw=100.0, interval_hours=1.0)
+        for d in range(3)
+        for h in range(24)
+    ]
+    days = daily_loads_from_readings(readings)
+    frame = daily_frame(days)
+    assert tuple(frame.columns) == DAILY_CORE_COLUMNS
+    assert frame["date"].dtype == object
+    assert frame["load_mwh"].dtype == "float64"
+    assert frame["hours_covered"].dtype == "float64"
+    assert frame["expected_hours"].dtype == "float64"
+    assert frame["intervals"].dtype == "int64"
+    assert frame["complete"].dtype == "bool"
+    assert list(frame["date"]) == [d.date for d in days]
+
+
+def test_daily_frame_date_column_holds_date_objects():
+    readings = [
+        IntervalReading(ts=datetime(2025, 6, 10, tzinfo=UTC), load_mw=1.0, interval_hours=1.0)
+    ]
+    days = daily_loads_from_readings(readings)
+    frame = daily_frame(days)
+    assert isinstance(frame["date"].iloc[0], date)
+    assert not isinstance(frame["date"].iloc[0], datetime)
+
+
+def test_daily_frame_empty_input_has_declared_columns():
+    frame = daily_frame([])
+    assert len(frame.index) == 0
+    assert tuple(frame.columns) == DAILY_CORE_COLUMNS
+    assert frame["load_mwh"].dtype == "float64"
+    assert frame["intervals"].dtype == "int64"
+    assert frame["complete"].dtype == "bool"

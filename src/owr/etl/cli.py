@@ -14,7 +14,6 @@ no real filesystem access required for the CLI logic itself.
 from __future__ import annotations
 
 import argparse
-import csv
 import json
 import os
 import sys
@@ -22,14 +21,22 @@ from collections.abc import Callable, Sequence
 from datetime import date, datetime
 from typing import Any, TextIO
 
+import pandas as pd
+
 from owr.config import DEFAULT_CONFIG
 from owr.etl.credentials import MissingCredentialError, redact_secrets
-from owr.etl.daily import DailyLoad, IntervalReading, daily_loads_from_readings
+from owr.etl.daily import IntervalReading, daily_frame, daily_loads_from_readings
 from owr.etl.extract import DATASETS, ExtractResult, Source, extract, source_for
 from owr.etl.rows_csv import read_rows_csv, write_rows_csv
-from owr.etl.seasons import Season, season_for, winter_label
-from owr.etl.transform import ThresholdResult, compute_threshold, find_windows_per_winter
-from owr.models import StressWindow
+from owr.etl.seasons import Season
+from owr.etl.transform import (
+    DAILY_FRAME_COLUMNS,
+    ThresholdResult,
+    add_season_columns,
+    compute_threshold,
+    find_windows_per_winter,
+    winter_labels,
+)
 
 
 def _default_connect(dsn: str) -> Any:
@@ -150,35 +157,39 @@ def _run_transform(
     readings: list[IntervalReading] = []
     for path in args.inputs:
         with open_input(path) as stream:
-            rows = read_rows_csv(stream, dataset, origin=path)
-        if not rows:
+            frame = read_rows_csv(stream, dataset, origin=path)
+        if frame.empty:
             print(f"etl transform: {path}: 0 data rows, skipping", file=sys.stderr)
             continue
-        for row in rows:
-            readings.append(_reading_from_row(row, path))
+        for record in frame.to_dict("records"):
+            readings.append(_reading_from_row(record, path))
 
     daily = daily_loads_from_readings(readings)
+    frame = add_season_columns(daily_frame(daily))
     season = Season(args.season)
-    threshold = compute_threshold(daily, percentile=args.percentile, season=season)
-    windows: dict[str, list[StressWindow]] | None
+    threshold = compute_threshold(frame, percentile=args.percentile, season=season)
+    events: pd.DataFrame | None
+    labels: tuple[str, ...]
     if season == Season.WINTER:
-        windows = find_windows_per_winter(
-            daily, threshold_mwh=threshold.threshold_mwh, min_window_days=args.min_window_days
+        events = find_windows_per_winter(
+            frame, threshold_mwh=threshold.threshold_mwh, min_window_days=args.min_window_days
         )
+        labels = winter_labels(frame)
     else:
         # Window detection groups by winter_label and is winter-only by
         # construction (owr.etl.transform.find_windows_per_winter). Calling it
         # here would silently report winter date ranges cut against a
         # non-winter threshold, so we skip it and say so explicitly instead.
-        windows = None
+        events = None
+        labels = ()
 
     if args.out:
-        _write_daily_csv(args.out, daily)
+        _write_daily_csv(args.out, frame)
 
     if args.format == "json":
-        print(json.dumps(_transform_result_json(threshold, windows), indent=2))
+        print(json.dumps(_transform_result_json(threshold, events, labels), indent=2))
     else:
-        _print_transform_text(threshold, windows)
+        _print_transform_text(threshold, events)
     return 0
 
 
@@ -196,38 +207,13 @@ def _reading_from_row(row: dict[str, str], origin: str) -> IntervalReading:
     )
 
 
-def _write_daily_csv(path: str, daily: list[DailyLoad]) -> None:
-    with open(path, "w", newline="") as f:
-        writer = csv.writer(f)
-        writer.writerow(
-            [
-                "date",
-                "load_mwh",
-                "hours_covered",
-                "expected_hours",
-                "intervals",
-                "complete",
-                "season",
-                "winter_label",
-            ]
-        )
-        for d in sorted(daily, key=lambda d: d.date):
-            writer.writerow(
-                [
-                    d.date.isoformat(),
-                    d.load_mwh,
-                    d.hours_covered,
-                    d.expected_hours,
-                    d.intervals,
-                    d.complete,
-                    season_for(d.date).value,
-                    winter_label(d.date) or "",
-                ]
-            )
+def _write_daily_csv(path: str, frame: pd.DataFrame) -> None:
+    ordered = frame.sort_values("date")[list(DAILY_FRAME_COLUMNS)]
+    ordered.to_csv(path, index=False, lineterminator="\r\n")
 
 
 def _print_transform_text(
-    threshold: ThresholdResult, windows: dict[str, list[StressWindow]] | None
+    threshold: ThresholdResult, events: pd.DataFrame | None
 ) -> None:
     print(f"etl transform: percentile={threshold.percentile}")
     print(f"  threshold_mwh   = {threshold.threshold_mwh:.3f}")
@@ -250,22 +236,22 @@ def _print_transform_text(
             f"(first={excluded[0].isoformat()}, last={excluded[-1].isoformat()})"
         )
 
-    if windows is None:
+    if events is None:
         print("  stress windows: not computed (window detection is winter-only)")
         return
 
     print("  stress windows:")
-    total = 0
-    for label in sorted(windows):
-        for w in sorted(windows[label], key=lambda w: w.start):
-            print(f"    {label}: {w.start.isoformat()} -> {w.end.isoformat()} ({w.days} days)")
-            total += 1
-    if total == 0:
+    for row in events.itertuples():
+        print(
+            f"    {row.winter_label}: {row.event_start_date.isoformat()} -> "
+            f"{row.event_end_date.isoformat()} ({row.event_duration_days} days)"
+        )
+    if len(events.index) == 0:
         print("    (none)")
 
 
 def _transform_result_json(
-    threshold: ThresholdResult, windows: dict[str, list[StressWindow]] | None
+    threshold: ThresholdResult, events: pd.DataFrame | None, labels: tuple[str, ...]
 ) -> dict[str, Any]:
     result: dict[str, Any] = {
         "percentile": threshold.percentile,
@@ -277,16 +263,18 @@ def _transform_result_json(
         "max_mwh": threshold.max_mwh,
         "excluded_incomplete": [d.isoformat() for d in threshold.excluded_incomplete],
     }
-    if windows is None:
+    if events is None:
         result["windows"] = None
         result["stress_windows_note"] = "window detection is winter-only; not computed"
     else:
         result["windows"] = {
             label: [
-                {"start": w.start.isoformat(), "end": w.end.isoformat(), "days": w.days}
-                for w in sorted(ws, key=lambda w: w.start)
+                {"start": row.event_start_date.isoformat(),
+                 "end": row.event_end_date.isoformat(),
+                 "days": int(row.event_duration_days)}
+                for row in events[events["winter_label"] == label].itertuples()
             ]
-            for label, ws in sorted(windows.items())
+            for label in labels
         }
     return result
 

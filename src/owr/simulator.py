@@ -17,11 +17,21 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+import pandas as pd
+
 from owr import budget as budget_mod
 from owr import dispatch as dispatch_mod
 from owr.config import DEFAULT_CONFIG, Config
 from owr.models import HOURS_PER_DAY, DailyResult, DayProfile, HourlyResult, StorageAsset
 from owr.soc_engine import clamp_charge, clamp_discharge, next_soc, usable_energy
+
+HOURLY_FRAME_COLUMNS: tuple[str, ...] = (
+    "date", "ts_hour", "soc", "charge", "discharge", "discharge_peak",
+    "discharge_smooth", "gross_load", "net_load", "capacity_margin",
+)
+DAILY_FRAME_COLUMNS: tuple[str, ...] = (
+    "date", "budget", "priority", "usable_energy", "recharge_sufficiency_ratio",
+)
 
 
 @dataclass
@@ -30,6 +40,95 @@ class SimulationResult:
     final_soc: float
     baseline_peak_mw: float  # worst hour of gross load across the window (no storage)
     reserve_peak_mw: float   # worst hour of net load across the window (with storage)
+
+    def hourly_frame(self) -> pd.DataFrame:
+        """The Component 6 hourly result table, one row per simulated hour.
+
+        ``date`` stays an ``object`` column of ``datetime.date``, never ``datetime64``
+        (see docs/PLAN_PANDAS_ADOPTION.md risk 3). ``capacity_margin`` is always
+        ``float64``, ``NaN`` when the caller passed no ``available_capacity_mw``
+        (measurement M16: an all-``None`` column must be built with an explicit
+        dtype, or it silently infers ``object``).
+
+        Column names keep the ``HourlyResult`` field names rather than the
+        architecture doc's names, because a rename would misstate what the field
+        holds:
+
+        | Frame column     | Architecture doc field    | Component |
+        |------------------|----------------------------|-----------|
+        | ``gross_load``   | ``observed_load``          | 6         |
+        | ``net_load``     | ``dispatched_net_load``    | 6         |
+        | ``discharge``    | ``discharge_power``        | 5         |
+        | ``charge``       | ``charge_power``            | 5         |
+        | ``soc``          | ``updated_SOC``             | 6         |
+        | ``capacity_margin`` | derived field "capacity margin" | 6    |
+
+        The doc also names fields this engine does not model: ``charge_dispatched``,
+        ``recharge_opportunity``, ``dispatch_reason``, ``remaining_capacity``,
+        ``observed_net_load``, ``oil_generation_actual``, ``gas_generation_actual``,
+        ``wind_generation_actual``.
+        """
+        dates: list = []
+        ts_hour: list = []
+        soc: list = []
+        charge: list = []
+        discharge: list = []
+        discharge_peak: list = []
+        discharge_smooth: list = []
+        gross_load: list = []
+        net_load: list = []
+        capacity_margin: list = []
+        for day in self.daily:
+            for hr in day.hourly:
+                dates.append(day.date)
+                ts_hour.append(hr.ts_hour)
+                soc.append(hr.soc)
+                charge.append(hr.charge)
+                discharge.append(hr.discharge)
+                discharge_peak.append(hr.discharge_peak)
+                discharge_smooth.append(hr.discharge_smooth)
+                gross_load.append(hr.gross_load)
+                net_load.append(hr.net_load)
+                capacity_margin.append(hr.capacity_margin)
+        return pd.DataFrame(
+            {
+                "date": pd.Series(dates, dtype="object"),
+                "ts_hour": pd.Series(ts_hour, dtype="int64"),
+                "soc": pd.Series(soc, dtype="float64"),
+                "charge": pd.Series(charge, dtype="float64"),
+                "discharge": pd.Series(discharge, dtype="float64"),
+                "discharge_peak": pd.Series(discharge_peak, dtype="float64"),
+                "discharge_smooth": pd.Series(discharge_smooth, dtype="float64"),
+                "gross_load": pd.Series(gross_load, dtype="float64"),
+                "net_load": pd.Series(net_load, dtype="float64"),
+                "capacity_margin": pd.Series(capacity_margin, dtype="float64"),
+            },
+            columns=list(HOURLY_FRAME_COLUMNS),
+        )
+
+    def daily_frame(self) -> pd.DataFrame:
+        """The Component 4 daily result table, one row per simulated day.
+
+        ``date`` stays an ``object`` column of ``datetime.date``, never
+        ``datetime64``. ``recharge_sufficiency_ratio`` is always ``float64``, ``NaN``
+        on the last day of a window (measurement M16 is the reason for the explicit
+        dtype).
+        """
+        dates = [day.date for day in self.daily]
+        budgets = [day.budget for day in self.daily]
+        priorities = [day.priority for day in self.daily]
+        usable_energy_vals = [day.usable_energy for day in self.daily]
+        ratios = [day.recharge_sufficiency_ratio for day in self.daily]
+        return pd.DataFrame(
+            {
+                "date": pd.Series(dates, dtype="object"),
+                "budget": pd.Series(budgets, dtype="float64"),
+                "priority": pd.Series(priorities, dtype="float64"),
+                "usable_energy": pd.Series(usable_energy_vals, dtype="float64"),
+                "recharge_sufficiency_ratio": pd.Series(ratios, dtype="float64"),
+            },
+            columns=list(DAILY_FRAME_COLUMNS),
+        )
 
 
 def simulate(

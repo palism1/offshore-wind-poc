@@ -12,6 +12,7 @@ from __future__ import annotations
 import argparse
 from datetime import UTC, date, datetime
 
+import pandas as pd
 import pytest
 
 from owr.etl import cli
@@ -25,6 +26,7 @@ from owr.etl.extract import (
     build_rows,
     build_upsert_sql,
     extract,
+    records_from_frame,
     source_for,
     wind_observations_from_records,
 )
@@ -161,6 +163,14 @@ def test_wind_record_rejects_non_finite_values():
 
 def test_wind_record_empty_list_is_empty():
     assert wind_observations_from_records([]) == []
+
+
+def test_real_nan_wind_cell_raises_non_finite():
+    ts = pd.Timestamp("2026-01-10T09:00:00Z")
+    frame = pd.DataFrame({"Interval Start": [ts], "Wind": [float("nan")]})
+    records = records_from_frame(frame)
+    with pytest.raises(ValueError, match="non-finite wind value"):
+        wind_observations_from_records(records)
 
 
 # --------------------------------------------------------------------------- #

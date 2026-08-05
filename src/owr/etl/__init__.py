@@ -10,7 +10,7 @@ Design rules encoded here, mirroring the rest of the repo:
   credentialed provider lives behind a small ``Source`` protocol and imports
   ``gridstatus`` lazily, so the transform-to-rows logic, the idempotent upsert
   keying and the provenance stamping are all unit-tested with fixtures — no
-  network, no credentials, no ``gridstatus``/``pandas`` install required.
+  network, no credentials, no ``gridstatus`` install and no credentials required.
 * **Provenance is a product feature.** Every row written to ``raw.*`` carries
   (source, retrieved_at, source_query, dataset_version); see ``provenance.py``.
 * **Idempotent upserts keyed on (source, ts[, zone]).** See ``extract.py`` —

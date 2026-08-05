@@ -23,3 +23,4 @@ synced 2026-07-24T04:56:46.667Z
 ## Done
 
 - [Merge the reserve-split branch to main - Mikko](https://discord.com/channels/1527018571912446132/1527869913895669934) [Software] — Owner: _unassigned_
+- [Adopt pandas/numpy at the four DataFrame boundaries — Mikko](docs/PLAN_PANDAS_ADOPTION.md) [Software] — Owner: Mikko — 2026-08-05, 360 passed / 3 skipped, ruff clean

@@ -247,8 +247,26 @@ def upsert_rows(conn: Any, dataset: RawDataset, rows: Sequence[tuple[object, ...
 # ---------------------------------------------------------------------------
 
 # gridstatus returns a pandas DataFrame; the live sources below call
-# ``df.to_dict("records")`` and hand the plain dicts to these adapters, so the
+# ``records_from_frame`` and hand the plain dicts to these adapters, so the
 # normalization is testable without pandas/gridstatus installed.
+
+
+def records_from_frame(frame: Any) -> list[dict[str, object]]:
+    """Convert a provider ``pandas.DataFrame`` into plain records.
+
+    ``gridstatus`` returns a ``DataFrame``; every adapter below takes plain dicts, so
+    the normalization stays testable without a provider installed. This function is
+    the single named place that crosses that boundary.
+
+    **No missing-value conversion happens here, on purpose.** ``gridstatus``
+    ``_handle_fuel_type_data`` fills an absent fuel column with ``numpy.nan``.
+    Mapping ``NaN`` to ``None`` would make ``_first`` treat the column as absent and
+    raise ``KeyError`` instead of the ``non-finite wind value at ts=...`` error that
+    ``wind_observations_from_records`` raises today. That guard stays live.
+    """
+    if not hasattr(frame, "to_dict"):
+        raise TypeError(f"expected a pandas.DataFrame, got {type(frame).__name__}")
+    return frame.to_dict("records")
 
 _TS_KEYS = ("Interval Start", "Time", "ts")
 _TS_END_KEYS = ("Interval End",)
@@ -435,7 +453,7 @@ class ISONELoadSource:
         gs = _import_gridstatus()
         iso = gs.ISONE()
         frame = iso.get_load(start=start.isoformat(), end=end.isoformat())
-        records = frame.to_dict("records")
+        records = records_from_frame(frame)
         return list(load_observations_from_records(records, self.zone))
 
     def describe_query(self, start: date, end: date) -> str:
@@ -509,7 +527,7 @@ class EIAWindSource:
             frequency="hourly",
             facets={"respondent": self.respondent, "fueltype": self.fuel_type},
         )
-        records = frame.to_dict("records")
+        records = records_from_frame(frame)
         return list(wind_observations_from_records(records))
 
     def describe_query(self, start: date, end: date) -> str:

@@ -14,7 +14,7 @@ and forecast modeling belong to the Data & Modeling Lead and are out of scope he
 | 0 | Repo scaffold (uv, ruff, pytest, docker-compose) | ✅ built |
 | 1 | PostgreSQL + TimescaleDB schema | ✅ migration written (`db/migrations/`) |
 | 2 | ETL via `gridstatus` (ISO-NE + EIA) | ⛔ blocked on API credentials |
-| 3 | Simulation engine (pure Python, MPC rolling-window dispatch) | ✅ built + tested |
+| 3 | Simulation engine (no I/O, MPC rolling-window dispatch) | ✅ built + tested |
 | 4 | FastAPI backend (`src/owr/api/`) | ✅ built + tested (in-memory store) |
 | 5 | Thin React/Vite frontend | ⏳ later |
 | 6 | Deployment (docker-compose demo) | ⏳ later |

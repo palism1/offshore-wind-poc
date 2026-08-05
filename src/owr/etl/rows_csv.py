@@ -9,10 +9,14 @@ audit the file without a database.
 from __future__ import annotations
 
 import csv
+import io
 import os
+import warnings
 from collections.abc import Callable, Sequence
 from datetime import datetime
 from typing import TextIO
+
+import pandas as pd
 
 from owr.etl.credentials import redact_secrets
 from owr.etl.extract import RawDataset
@@ -52,20 +56,35 @@ def _cell(value: object) -> object:
     return value
 
 
-def read_rows_csv(stream: TextIO, dataset: RawDataset, *, origin: str) -> list[dict[str, str]]:
-    """Read a rows CSV written by :func:`write_rows_csv` back into plain dicts.
+def read_rows_csv(stream: TextIO, dataset: RawDataset, *, origin: str) -> pd.DataFrame:
+    """Read a rows CSV written by :func:`write_rows_csv` into a string-typed frame.
 
-    Filters ``#`` and blank lines before handing the rest to ``csv.DictReader``,
-    mirroring ``scenario_input.read_day_profiles``. Raises :class:`RowsCsvError` if
-    the header does not match ``dataset.columns``.
+    Every column is ``object`` dtype holding ``str``; a blank cell reads back as
+    ``""``, which is what ``write_rows_csv`` writes for ``None``. No column is
+    converted to a number here: the caller owns the unit conversion, and an early
+    conversion would turn an empty ``forecast_mw`` cell into ``NaN`` instead of ``""``.
+
+    Two inputs that ``csv.DictReader`` accepted are now rejected, both malformed:
+    a data row with more fields than the header, and an unclosed quoted field. See
+    docs/PLAN_PANDAS_ADOPTION.md admitted changes A1 and A2.
     """
     filtered = [line for line in stream if line.strip() and not line.lstrip().startswith("#")]
     if not filtered:
         raise RowsCsvError(f"{origin}: no data rows (file is empty or all comments/blank)")
-    reader = csv.DictReader(filtered)
-    if reader.fieldnames is None or tuple(reader.fieldnames) != dataset.columns:
+    try:
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", pd.errors.ParserWarning)
+            frame = pd.read_csv(
+                io.StringIO("".join(filtered)),
+                dtype=str,
+                na_filter=False,
+                index_col=False,
+            )
+    except (pd.errors.ParserError, pd.errors.EmptyDataError, pd.errors.ParserWarning) as exc:
+        raise RowsCsvError(f"{origin}: cannot parse as CSV: {exc}") from exc
+    if tuple(frame.columns) != dataset.columns:
         raise RowsCsvError(
-            f"{origin}: header {reader.fieldnames!r} does not match expected columns "
+            f"{origin}: header {list(frame.columns)!r} does not match expected columns "
             f"{dataset.columns!r}"
         )
-    return list(reader)
+    return frame

@@ -6,11 +6,13 @@ Verifies the end-to-end invariants the Architecture doc requires:
   * state carries forward across days (MPC receding horizon).
 """
 
+import datetime
+import math
 from datetime import date, timedelta
 
 from owr.initial_soc import charge_from_wind
 from owr.models import DayProfile, StorageAsset
-from owr.simulator import simulate
+from owr.simulator import DAILY_FRAME_COLUMNS, HOURLY_FRAME_COLUMNS, simulate
 
 
 def _stress_day(i: int) -> DayProfile:
@@ -84,3 +86,81 @@ def test_starting_soc_out_of_bounds_rejected():
     except ValueError:
         raised = True
     assert raised
+
+
+def _two_day_asset_and_window():
+    asset = StorageAsset(
+        total_mwh=20000,
+        power_mw=2000,
+        efficiency=1.0,
+        soc_floor_frac=0.33,
+        strategic_reserve_frac=0.0,
+    )
+    window = [_stress_day(i) for i in range(2)]
+    return asset, window
+
+
+def test_hourly_frame_shape_and_columns():
+    asset, window = _two_day_asset_and_window()
+    result = simulate(asset, window, starting_soc=asset.total_mwh, available_capacity_mw=13000.0)
+    frame = result.hourly_frame()
+    assert tuple(frame.columns) == HOURLY_FRAME_COLUMNS
+    assert len(frame.index) == 48
+
+
+def test_hourly_frame_values_match_the_dataclasses():
+    asset, window = _two_day_asset_and_window()
+    result = simulate(asset, window, starting_soc=asset.total_mwh, available_capacity_mw=13000.0)
+    frame = result.hourly_frame()
+    rows = [hr for day in result.daily for hr in day.hourly]
+    dates = [day.date for day in result.daily for _ in day.hourly]
+    for i, (row, day_date) in enumerate(zip(rows, dates, strict=True)):
+        r = frame.iloc[i]
+        assert r["date"] == day_date
+        assert r["ts_hour"] == row.ts_hour
+        assert r["soc"] == row.soc
+        assert r["charge"] == row.charge
+        assert r["discharge"] == row.discharge
+        assert r["discharge_peak"] == row.discharge_peak
+        assert r["discharge_smooth"] == row.discharge_smooth
+        assert r["gross_load"] == row.gross_load
+        assert r["net_load"] == row.net_load
+        assert r["capacity_margin"] == row.capacity_margin
+
+
+def test_hourly_frame_date_column_holds_date_objects():
+    asset, window = _two_day_asset_and_window()
+    result = simulate(asset, window, starting_soc=asset.total_mwh, available_capacity_mw=13000.0)
+    frame = result.hourly_frame()
+    assert isinstance(frame["date"].iloc[0], datetime.date)
+    assert not isinstance(frame["date"].iloc[0], datetime.datetime)
+    assert frame["date"].dtype == object
+
+
+def test_capacity_margin_is_nan_and_float64_when_unset():
+    asset, window = _two_day_asset_and_window()
+    result = simulate(asset, window, starting_soc=asset.total_mwh, available_capacity_mw=None)
+    frame = result.hourly_frame()
+    assert frame["capacity_margin"].dtype == "float64"
+    assert frame["capacity_margin"].isna().all()
+
+
+def test_daily_frame_columns_and_nan_ratio():
+    asset, window = _two_day_asset_and_window()
+    result = simulate(asset, window, starting_soc=asset.total_mwh, available_capacity_mw=13000.0)
+    frame = result.daily_frame()
+    assert frame["recharge_sufficiency_ratio"].dtype == "float64"
+    assert math.isnan(frame["recharge_sufficiency_ratio"].iloc[-1])
+
+
+def test_frames_are_empty_with_declared_columns():
+    asset = StorageAsset(total_mwh=1000, power_mw=100)
+    result = simulate(asset, [], starting_soc=0.0)
+    hourly = result.hourly_frame()
+    daily = result.daily_frame()
+    assert len(hourly.index) == 0
+    assert len(daily.index) == 0
+    assert tuple(hourly.columns) == HOURLY_FRAME_COLUMNS
+    assert tuple(daily.columns) == DAILY_FRAME_COLUMNS
+    assert hourly["capacity_margin"].dtype == "float64"
+    assert daily["recharge_sufficiency_ratio"].dtype == "float64"
