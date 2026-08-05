@@ -15,6 +15,8 @@ dependencies = [
 etl = "owr.etl.cli:main"
 # Simulator CLI: runs a scenario end to end over the engine (see src/owr/cli.py).
 simulate = "owr.cli:main"
+# Sweep CLI: severity reduction vs storage size (see src/owr/sweep_cli.py).
+sweep = "owr.sweep_cli:main"
 
 [project.optional-dependencies]
 # The engine takes pandas and numpy as data structure and numeric dependencies,

@@ -1,0 +1,181 @@
+"""Tests for src/owr/sweep_cli.py (docs/PLAN_SCENARIO_SWEEP.md section 6.3).
+
+Cases 1 to 13 land in phase 2; cases 14 and 15 land in phase 3.
+"""
+
+from __future__ import annotations
+
+import io
+import json
+import sys
+
+import pytest
+
+from owr import sweep_cli
+from owr.config import DEFAULT_CONFIG
+
+REAL_CSV = "examples/real_winter_stress_2026.csv"
+SYNTHETIC_CSV = "examples/synthetic_winter_stress.csv"
+
+
+def _run_cli(argv, monkeypatch):
+    out = io.StringIO()
+    err = io.StringIO()
+    monkeypatch.setattr(sys, "stdout", out)
+    monkeypatch.setattr(sys, "stderr", err)
+    code = sweep_cli.main(argv)
+    return code, out.getvalue(), err.getvalue()
+
+
+def test_help_exits_0():
+    parser = sweep_cli.build_parser()
+    with pytest.raises(SystemExit) as exc:
+        parser.parse_args(["--help"])
+    assert exc.value.code == 0
+
+
+def test_parser_defaults_equal_default_config():
+    parser = sweep_cli.build_parser()
+    args = parser.parse_args(["--input", SYNTHETIC_CSV, "--power-mw", "4320"])
+    assert args.sizes_mwh == DEFAULT_CONFIG.default_sweep_sizes_mwh
+    assert args.power_rule == DEFAULT_CONFIG.default_sweep_power_rule
+
+
+def test_sizes_mwh_parses_and_sorts():
+    parser = sweep_cli.build_parser()
+    args = parser.parse_args(
+        ["--input", SYNTHETIC_CSV, "--power-mw", "4320", "--sizes-mwh", "20000,10000"]
+    )
+    assert args.sizes_mwh == (10000.0, 20000.0)
+
+
+def test_sizes_mwh_rejects_duplicate():
+    parser = sweep_cli.build_parser()
+    with pytest.raises(SystemExit) as exc:
+        parser.parse_args(
+            ["--input", SYNTHETIC_CSV, "--power-mw", "4320", "--sizes-mwh", "10000,10000"]
+        )
+    assert exc.value.code == 2
+
+
+def test_sizes_mwh_rejects_empty_string():
+    parser = sweep_cli.build_parser()
+    with pytest.raises(SystemExit) as exc:
+        parser.parse_args(["--input", SYNTHETIC_CSV, "--power-mw", "4320", "--sizes-mwh", ""])
+    assert exc.value.code == 2
+
+
+def test_sizes_mwh_rejects_non_numeric():
+    parser = sweep_cli.build_parser()
+    with pytest.raises(SystemExit) as exc:
+        parser.parse_args(
+            ["--input", SYNTHETIC_CSV, "--power-mw", "4320", "--sizes-mwh", "abc"]
+        )
+    assert exc.value.code == 2
+
+
+def test_missing_power_mw_under_fixed_exits_2(monkeypatch):
+    code, out, err = _run_cli(["--input", SYNTHETIC_CSV], monkeypatch)
+    assert code == 2
+    assert out == ""
+    assert "power_mw" in err
+
+
+def test_fixed_duration_power_mw_equals_size_over_duration(monkeypatch):
+    code, out, err = _run_cli(
+        [
+            "--input", SYNTHETIC_CSV,
+            "--power-rule", "fixed_duration",
+            "--duration-hours", "4",
+            "--format", "json",
+        ],
+        monkeypatch,
+    )
+    assert code == 0
+    report = json.loads(out)
+    for p in report["points"]:
+        assert p["power_mw"] == pytest.approx(p["storage_mwh"] / 4.0)
+
+
+def test_format_json_top_level_keys_in_order(monkeypatch):
+    code, out, err = _run_cli(
+        ["--input", SYNTHETIC_CSV, "--power-mw", "4320", "--format", "json"], monkeypatch
+    )
+    assert code == 0
+    report = json.loads(out)
+    assert list(report.keys()) == [
+        "code_version", "generated_at", "input", "spec", "dispatch",
+        "points", "chart", "open_questions",
+    ]
+    assert report["chart"] is None
+
+
+def test_table_output_has_one_row_per_size_and_code_version(monkeypatch):
+    code, out, err = _run_cli(["--input", SYNTHETIC_CSV, "--power-mw", "4320"], monkeypatch)
+    assert code == 0
+    assert f"engine {sweep_cli.code_version()}" in out
+    for size in DEFAULT_CONFIG.default_sweep_sizes_mwh:
+        assert f"{size:,.0f}" in out
+
+
+def test_reference_point_real_and_synthetic(monkeypatch):
+    code, out, err = _run_cli(
+        [
+            "--input", REAL_CSV,
+            "--sizes-mwh", "60000",
+            "--power-mw", "4320",
+            "--format", "json",
+        ],
+        monkeypatch,
+    )
+    assert code == 0
+    report = json.loads(out)
+    assert report["points"][0]["severity_reduction"] == pytest.approx(0.010633, abs=1e-6)
+
+    code, out, err = _run_cli(
+        [
+            "--input", SYNTHETIC_CSV,
+            "--sizes-mwh", "60000",
+            "--power-mw", "4320",
+            "--format", "json",
+        ],
+        monkeypatch,
+    )
+    assert code == 0
+    report = json.loads(out)
+    assert report["points"][0]["severity_reduction"] == pytest.approx(0.25, abs=1e-9)
+
+
+def test_data_out_writes_bannered_csv(monkeypatch, tmp_path):
+    out_path = tmp_path / "sweep.csv"
+    code, out, err = _run_cli(
+        [
+            "--input", SYNTHETIC_CSV,
+            "--power-mw", "4320",
+            "--sizes-mwh", "10000,20000",
+            "--data-out", str(out_path),
+        ],
+        monkeypatch,
+    )
+    assert code == 0
+    lines = out_path.read_text().splitlines()
+    banner = [line for line in lines if line.startswith("#")]
+    assert len(banner) > 0
+    non_banner = [line for line in lines if not line.startswith("#")]
+    header = non_banner[0].split(",")
+    from owr.sweep import SWEEP_FRAME_COLUMNS
+
+    assert header == list(SWEEP_FRAME_COLUMNS)
+    data_rows = [line for line in non_banner[1:] if line.strip()]
+    assert len(data_rows) == 2
+
+
+def test_reader_warnings_reach_stderr_not_stdout(monkeypatch):
+    code, out, err = _run_cli(
+        ["--input", REAL_CSV, "--power-mw", "4320", "--sizes-mwh", "10000", "--format", "json"],
+        monkeypatch,
+    )
+    assert code == 0
+    assert "wind_forecast_frac" in err
+    # stdout must stay parseable JSON, uncontaminated by the warning
+    json.loads(out)
