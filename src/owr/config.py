@@ -9,9 +9,10 @@ the open questions in docs/PLAN.md never get hard-coded as magic numbers.
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 
-from owr.models import HOURS_PER_DAY, WrapConvention
+from owr.models import HOURS_PER_DAY, PowerRule, WrapConvention
 
 
 @dataclass(frozen=True)
@@ -92,6 +93,21 @@ class Config:
         wired anywhere" for the same reason. They belong in ``Config`` and not in
         ``cli.py`` because ``metrics.estimated_capital_cost_usd`` and
         ``metrics.cost_per_equivalent_full_cycle_usd`` take them as parameters.
+
+    default_sweep_sizes_mwh
+        OPEN team question (``sweep_size_ladder``). The seven sizes bracket Report
+        A's 40,000 to 60,000 MWh system reserve target and the 60,000 MWh demo
+        point. ``docs/FACT_CHECK_REPORT.md`` records that the 40,000 to 60,000 MWh
+        target does not reproduce from its own inputs, so the ladder moves when
+        that number moves. Read at parser-build time by
+        ``sweep_cli.build_parser``; no engine function reads it at run time. See
+        docs/PLAN_SCENARIO_SWEEP.md decision D3.
+
+    default_sweep_power_rule
+        OPEN team question (``sweep_power_scaling``). Fixed power isolates the
+        energy variable and reproduces the recorded reference points. Fixed
+        duration is the fleet-scaled reading. See docs/PLAN_SCENARIO_SWEEP.md
+        decision D2. Read at parser-build time only, as above.
     """
 
     priority_demand_weight: float = 0.7
@@ -109,6 +125,10 @@ class Config:
     est_transmission_cost_per_mile_usd: float | None = None
     est_storage_unit_cost_usd: float | None = None
     solution_lifetime_years: float | None = None
+    default_sweep_sizes_mwh: tuple[float, ...] = (
+        5000.0, 10000.0, 20000.0, 40000.0, 60000.0, 80000.0, 100000.0,
+    )
+    default_sweep_power_rule: PowerRule = PowerRule.FIXED
 
     def __post_init__(self) -> None:
         if abs((self.priority_demand_weight + self.priority_wind_weight) - 1.0) > 1e-9:
@@ -138,6 +158,16 @@ class Config:
             raise ValueError("est_storage_unit_cost_usd must be non-negative")
         if self.solution_lifetime_years is not None and self.solution_lifetime_years < 0:
             raise ValueError("solution_lifetime_years must be non-negative")
+        if not self.default_sweep_sizes_mwh:
+            raise ValueError("default_sweep_sizes_mwh must not be empty")
+        for size in self.default_sweep_sizes_mwh:
+            if not math.isfinite(size) or size <= 0:
+                raise ValueError("default_sweep_sizes_mwh values must be finite and positive")
+        for prev, nxt in zip(
+            self.default_sweep_sizes_mwh, self.default_sweep_sizes_mwh[1:], strict=False
+        ):
+            if not prev < nxt:
+                raise ValueError("default_sweep_sizes_mwh must be strictly increasing")
 
 
 DEFAULT_CONFIG = Config()

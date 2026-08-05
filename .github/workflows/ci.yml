@@ -26,10 +26,11 @@ jobs:
       - name: Set up Python 3.12
         run: uv python install 3.12
 
-      - name: Install dependencies (dev group + etl/api extras)
+      - name: Install dependencies (dev group + etl/api/viz extras)
         # The etl extra carries gridstatus, which tests/test_etl_eia.py imports
-        # through EIAWindSource.dataset_version(); without it that test fails.
-        run: uv sync --group dev --extra etl --extra api
+        # through EIAWindSource.dataset_version(); without it that test fails. The
+        # viz extra carries Matplotlib, which the chart tests import.
+        run: uv sync --group dev --extra etl --extra api --extra viz
 
       - name: Lint (ruff)
         run: uv run ruff check .

@@ -31,6 +31,11 @@ api = [
     # Postgres-backed store used when OWR_DATABASE_URL is set (imported lazily).
     "psycopg[binary]>=3.1",
 ]
+viz = [
+    # Chart rendering for the sweep CLI (src/owr/sweep_chart.py) only. The engine
+    # core never imports it; see CLAUDE.md engine-core purity rule.
+    "matplotlib>=3.9",
+]
 
 [dependency-groups]
 dev = [

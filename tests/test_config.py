@@ -11,7 +11,7 @@ import pytest
 
 from owr.api.schemas import ScenarioCreate
 from owr.config import Config
-from owr.models import WrapConvention
+from owr.models import PowerRule, WrapConvention
 
 
 def test_new_fields_have_documented_defaults():
@@ -133,3 +133,53 @@ def test_capital_cost_constants_still_json_round_trip():
     assert round_tripped["est_transmission_cost_per_mile_usd"] is None
     assert round_tripped["est_storage_unit_cost_usd"] is None
     assert round_tripped["solution_lifetime_years"] is None
+
+
+# --------------------------------------------------------------------------- #
+# Sweep defaults (docs/PLAN_SCENARIO_SWEEP.md section 4.2)
+# --------------------------------------------------------------------------- #
+
+
+def test_sweep_defaults_match_documented_values():
+    cfg = Config()
+    assert cfg.default_sweep_sizes_mwh == (
+        5000.0, 10000.0, 20000.0, 40000.0, 60000.0, 80000.0, 100000.0,
+    )
+    assert cfg.default_sweep_power_rule == PowerRule.FIXED
+
+
+def test_default_sweep_sizes_mwh_rejects_empty_ladder():
+    with pytest.raises(ValueError):
+        Config(default_sweep_sizes_mwh=())
+
+
+def test_default_sweep_sizes_mwh_rejects_non_positive_size():
+    with pytest.raises(ValueError):
+        Config(default_sweep_sizes_mwh=(0.0, 10000.0))
+    with pytest.raises(ValueError):
+        Config(default_sweep_sizes_mwh=(-5000.0, 10000.0))
+
+
+def test_default_sweep_sizes_mwh_rejects_non_finite_size():
+    with pytest.raises(ValueError):
+        Config(default_sweep_sizes_mwh=(5000.0, float("inf")))
+    with pytest.raises(ValueError):
+        Config(default_sweep_sizes_mwh=(5000.0, float("nan")))
+
+
+def test_default_sweep_sizes_mwh_must_be_strictly_increasing():
+    with pytest.raises(ValueError):
+        Config(default_sweep_sizes_mwh=(10000.0, 5000.0))
+    with pytest.raises(ValueError):
+        Config(default_sweep_sizes_mwh=(5000.0, 5000.0))
+
+
+def test_sweep_defaults_json_round_trip():
+    """Extends the WrapConvention round-trip test: the ladder reads back as a
+    list and the rule reads back as its string value."""
+    payload = json.dumps(asdict(Config()))
+    round_tripped = json.loads(payload)
+    assert round_tripped["default_sweep_sizes_mwh"] == [
+        5000.0, 10000.0, 20000.0, 40000.0, 60000.0, 80000.0, 100000.0,
+    ]
+    assert round_tripped["default_sweep_power_rule"] == "fixed"

@@ -128,6 +128,18 @@ class WrapConvention(StrEnum):
         return 1 if self is WrapConvention.WRAP_TO_NEXT_DAY else 0
 
 
+class PowerRule(StrEnum):
+    """How a sweep sets storage power at each energy size. OPEN team question
+    (sweep_power_scaling): see docs/PLAN_SCENARIO_SWEEP.md section 3, decision D2.
+
+    ``StrEnum``, not a plain ``Enum``, for the same reason ``WrapConvention`` is one:
+    ``Config`` carries it and ``cli.py`` does ``json.dumps(asdict(cfg))``.
+    """
+
+    FIXED = "fixed"                    # power_mw is the same at every size
+    FIXED_DURATION = "fixed_duration"  # power_mw = size_mwh / duration_hours
+
+
 @dataclass(frozen=True)
 class PeakWindow:
     """The highest-summing rolling window of consecutive hours in a day, found by
