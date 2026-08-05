@@ -179,3 +179,44 @@ def test_reader_warnings_reach_stderr_not_stdout(monkeypatch):
     assert "wind_forecast_frac" in err
     # stdout must stay parseable JSON, uncontaminated by the warning
     json.loads(out)
+
+
+def test_chart_writes_file_and_names_path(monkeypatch, tmp_path):
+    pytest.importorskip("matplotlib")
+    chart_path = tmp_path / "chart.png"
+    code, out, err = _run_cli(
+        [
+            "--input", SYNTHETIC_CSV,
+            "--power-mw", "4320",
+            "--sizes-mwh", "10000,20000",
+            "--chart", str(chart_path),
+        ],
+        monkeypatch,
+    )
+    assert code == 0
+    assert chart_path.exists()
+    assert str(chart_path) in out
+
+
+def test_chart_dependency_error_exits_2_writes_nothing_to_stdout(monkeypatch):
+    """Pins the step order in section 4.5: the chart renders before anything
+    reaches stdout, so a ChartDependencyError produces no report at all."""
+    from owr.sweep_chart import ChartDependencyError
+
+    def _raise(*args, **kwargs):
+        raise ChartDependencyError("chart output needs matplotlib, an optional dependency.")
+
+    monkeypatch.setattr(sweep_cli, "render_sweep_chart", _raise)
+
+    code, out, err = _run_cli(
+        [
+            "--input", SYNTHETIC_CSV,
+            "--power-mw", "4320",
+            "--sizes-mwh", "10000",
+            "--chart", "/tmp/unused_sweep_chart.png",
+        ],
+        monkeypatch,
+    )
+    assert code == 2
+    assert out == ""
+    assert "matplotlib" in err

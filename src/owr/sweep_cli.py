@@ -34,6 +34,7 @@ from owr.cli import _finite_float
 from owr.config import DEFAULT_CONFIG, Config
 from owr.models import PowerRule
 from owr.sweep import SweepSpec, run_sweep
+from owr.sweep_chart import render_sweep_chart
 from owr.version import code_version
 
 _OPEN_QUESTIONS_STATIC = {
@@ -181,6 +182,11 @@ def build_parser() -> argparse.ArgumentParser:
         help=f"ramp-smoothing dispatch weight (default {cfg.default_smooth_weight})",
     )
     parser.add_argument(
+        "--chart",
+        default=None,
+        help="write the chart here; the file extension picks PNG or SVG",
+    )
+    parser.add_argument(
         "--data-out",
         dest="data_out",
         default=None,
@@ -248,6 +254,13 @@ def _run(args: argparse.Namespace) -> int:
 
     report = _build_report(args=args, days=days, spec=spec, cfg=cfg, result=result)
 
+    if args.chart:
+        title, subtitle, footer = _chart_text(args=args, days=days, spec=spec, report=report)
+        render_sweep_chart(
+            result.frame(), path=args.chart, title=title, subtitle=subtitle, footer=footer
+        )
+        report["chart"] = args.chart
+
     if args.data_out:
         _write_data_csv(args.data_out, result.frame(), days=days, spec=spec, args=args)
 
@@ -256,6 +269,27 @@ def _run(args: argparse.Namespace) -> int:
     else:
         _render_table(report, args, sys.stdout)
     return 0
+
+
+def _chart_text(
+    *, args: argparse.Namespace, days: list, spec: SweepSpec, report: dict
+) -> tuple[str, str, str]:
+    title = args.title or "severity reduction vs storage size"
+    rule = spec.power_rule.value
+    subtitle = (
+        f"{args.input}, {len(days)} days {days[0].date.isoformat()} to "
+        f"{days[-1].date.isoformat()}, power rule {rule}, "
+        f"efficiency {spec.efficiency:.3f}, "
+        f"protected floor {spec.soc_floor_frac + spec.strategic_reserve_frac:.3f}"
+    )
+    first = spec.sizes_mwh[0]
+    last = spec.sizes_mwh[-1]
+    footer = (
+        f"engine {report['code_version']}, generated {report['generated_at']}, "
+        f"sizes {first:,.0f} to {last:,.0f} MWh, {len(spec.sizes_mwh)} points. "
+        "Team design constants, not verified facts."
+    )
+    return title, subtitle, footer
 
 
 def _build_report(
