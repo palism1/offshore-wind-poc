@@ -23,6 +23,7 @@ decision, see Open decisions below) · `reference` (informs design, not ingested
 | ISO-NE Daily Generation by Fuel Type | https://www.iso-ne.com/isoexpress/web/reports/operations/-/tree/daily-gen-fuel-type | CSV | **daily** | public download | Reconciliation reference for the EIA hourly wind series (was Alexander's 2026-07-28 wind choice) | superseded for charging — see [2] |
 | EIA API v2 (opendata) | https://www.eia.gov/opendata/browser/ | REST/JSON | varies | EIA API key | Generation + capacity context (also wraps via `gridstatus`) | confirmed |
 | EIA hourly generation by fuel type (RTO) | https://www.eia.gov/opendata/browser/electricity/rto/fuel-type-data | REST/JSON | hourly | **EIA API key (free, required)** | **Canonical hourly wind series** for storage charging — Mitchell's 2026-07-28 choice; ISO-NE respondent, `WND` fuel type | confirmed — see [2] |
+| EIA hourly generation by fuel type (RTO) — oil and gas | https://www.eia.gov/opendata/browser/electricity/rto/fuel-type-data | REST/JSON | hourly | **EIA API key (free, required)** | Hourly petroleum (`OIL`) and natural gas (`NG`) net generation, respondent `ISNE`; lands in `raw.hourly_fuel_gen`; feeds the Fuel-Fired Generation Offset metric | extractor shipped; live pull unverified, key pending |
 
 ## Reference sources (inform design, not ingested)
 
@@ -50,6 +51,21 @@ flips (full argument in `stress_finder.py`'s `percentile_threshold` docstring).
 The recorded winter p90 threshold, **385,832.584 MWh/day** (see "Data pull complete" in
 `docs/HANDOFF.md`), is unchanged at the three decimal places the CLI prints. A fresh
 `etl transform` run over the same input reproduces the same figure.
+
+## EIA-930 fuel series, what the numbers mean — 2026-08-05
+
+- The pivoted column for oil is `Petroleum` and for gas is `Natural Gas`, never "Oil" and
+  never "Gas" (`gridstatus/eia_constants.py:3-19`).
+- **`0.0` means "zero output or not reported".** gridstatus pivots with `aggfunc="sum"`
+  and pandas sums an all-null group to `0.0`, so a null EIA telemetry value arrives as a
+  zero (`gridstatus/eia.py:950-955`; reproduced on pandas 2.3.3). ISO-NE petroleum output
+  is legitimately `0.0` for most hours of the year, so the two cases cannot be told apart.
+  Any metric built on these rows inherits that limit.
+- **A missing hour is an absent row, not a NaN.** EIA omits an hour that has no row for
+  the requested fuel, so a gap arrives as a shorter series. `extract.hourly_gaps` reports
+  interior holes; edge truncation needs a row count against the window.
+- A NaN in the requested fuel column means the pivot produced no such column, which is the
+  signature of a renamed fuel upstream. The adapter raises on it.
 
 ## Onboarding / team resources
 

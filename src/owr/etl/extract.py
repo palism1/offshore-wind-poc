@@ -14,10 +14,10 @@ pure and unit-testable offline:
 
 Adding LMP or EIA is a matter of: (1) a ``RawDataset`` describing the target table
 and its ``to_values`` mapping — the row-building and upsert layers below are already
-dataset-generic — and (2) a provider ``Source`` adapter. ``load`` is wired end to
-end; ``lmp`` has its dataset + record adapter registered (and tested) with the live
-source left as the documented extension point, since it needs the same credentials
-that block ``load``.
+dataset-generic — and (2) a provider ``Source`` adapter. ``load``, ``wind``, ``oil``
+and ``gas`` are wired end to end; ``lmp`` has its dataset + record adapter
+registered (and tested) with the live source left as the documented extension
+point.
 
 Nothing here runs against ISO-NE until ISO-NE Web Services credentials exist. Until
 then the layers below the provider are exercised entirely with fixtures.
@@ -29,7 +29,7 @@ import math
 import os
 from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from typing import Any, Protocol, runtime_checkable
 
 from owr.etl.credentials import EIA_API_KEY_ENV, require_eia_api_key
@@ -88,6 +88,81 @@ class WindObservation:
     gen_mw: float
     forecast_mw: float | None = None
     horizon_days: int = 0  # 0 = realized; >0 reserved for forecast rows (see Q6)
+
+
+@dataclass(frozen=True)
+class FuelGenObservation:
+    """One interval net-generation reading for a single EIA-930 fuel code.
+
+    ``interval_minutes`` is required for the same reason ``LoadObservation``
+    requires it: energy is ``gen_mw * interval_minutes / 60``, and an assumed
+    width is a silent multiplicative error. EIA-930 fuel-type data is hourly, so
+    the value is 60 in practice, derived from ``Interval End - Interval Start``
+    rather than hard-coded (docs/PLAN_EIA_OIL_GAS.md D3).
+    """
+
+    ts: datetime
+    fuel_code: str
+    gen_mw: float
+    interval_minutes: float
+
+    def __post_init__(self) -> None:
+        if not self.fuel_code:
+            raise ValueError("fuel_code is required")
+        if self.interval_minutes <= 0:
+            raise ValueError("interval_minutes must be positive")
+
+
+# ---------------------------------------------------------------------------
+# EIA-930 fuel series — the API facet code, the pivoted column, the stored code
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class EIAFuelSeries:
+    """One EIA-930 fuel category, from the API facet down to the stored row.
+
+    dataset_name
+        CLI key and ``RawDataset.name``, e.g. ``'oil'``.
+    code
+        EIA-930 energy source code, used twice on purpose: as the ``fueltype``
+        facet value sent to the API, and as the ``fuel_code`` written to
+        ``raw.hourly_fuel_gen``. ``'OIL'`` is "all petroleum products",
+        ``'NG'`` is natural gas (EIA-930 form instructions, energy source codes).
+    frame_columns
+        Accepted column names on a provider record, most authoritative first.
+        ``gridstatus._handle_fuel_type_data`` pivots the API's ``type-name`` and
+        title-cases it, so oil arrives as ``'Petroleum'`` and gas as
+        ``'Natural Gas'`` — never ``'Oil'``, never ``'Gas'``
+        (gridstatus/eia_constants.py:3-19). ``frame_columns[0]`` is the canonical
+        name and is what the non-finite error reports. Every alias is fuel
+        specific on purpose: a shared ``'gen_mw'`` alias would let a gas record
+        feed the oil adapter and be stamped ``fuel_code='OIL'``.
+    source
+        Provenance producer id, and the first component of the idempotency key.
+    """
+
+    dataset_name: str
+    code: str
+    frame_columns: tuple[str, ...]
+    source: str
+
+
+EIA_OIL = EIAFuelSeries(
+    dataset_name="oil",
+    code="OIL",
+    frame_columns=("Petroleum", "oil_mw"),
+    source="eia930.isne.oil",
+)
+
+EIA_GAS = EIAFuelSeries(
+    dataset_name="gas",
+    code="NG",
+    frame_columns=("Natural Gas", "gas_mw"),
+    source="eia930.isne.gas",
+)
+
+EIA_FUEL_SERIES: dict[str, EIAFuelSeries] = {s.dataset_name: s for s in (EIA_OIL, EIA_GAS)}
 
 
 # ---------------------------------------------------------------------------
@@ -149,6 +224,15 @@ def _wind_values(obs: WindObservation) -> dict[str, object]:
     }
 
 
+def _fuel_values(obs: FuelGenObservation) -> dict[str, object]:
+    return {
+        "ts": obs.ts,
+        "fuel_code": obs.fuel_code,
+        "gen_mw": obs.gen_mw,
+        "interval_minutes": obs.interval_minutes,
+    }
+
+
 # name "load" stays the CLI key; the table is raw.system_load (migration 005) —
 # the provider's credential-free ISO-NE feed is 5-minute, not hourly, so the
 # table is granularity-agnostic and carries interval_minutes on every row.
@@ -176,7 +260,32 @@ HOURLY_WIND = RawDataset(
     to_values=_wind_values,
 )
 
-DATASETS: dict[str, RawDataset] = {ds.name: ds for ds in (HOURLY_LOAD, HOURLY_LMP, HOURLY_WIND)}
+# Oil and gas share one table: the row's natural key is (source, ts, fuel_code),
+# so a second fuel code never collides with a first (docs/PLAN_EIA_OIL_GAS.md D1).
+FUEL_GEN_TABLE = "raw.hourly_fuel_gen"
+FUEL_GEN_VALUE_COLUMNS = ("ts", "fuel_code", "gen_mw", "interval_minutes")
+FUEL_GEN_CONFLICT_KEY = ("source", "ts", "fuel_code")
+
+HOURLY_OIL = RawDataset(
+    name=EIA_OIL.dataset_name,
+    table=FUEL_GEN_TABLE,
+    value_columns=FUEL_GEN_VALUE_COLUMNS,
+    conflict_key=FUEL_GEN_CONFLICT_KEY,
+    to_values=_fuel_values,
+)
+
+HOURLY_GAS = RawDataset(
+    name=EIA_GAS.dataset_name,
+    table=FUEL_GEN_TABLE,
+    value_columns=FUEL_GEN_VALUE_COLUMNS,
+    conflict_key=FUEL_GEN_CONFLICT_KEY,
+    to_values=_fuel_values,
+)
+
+DATASETS: dict[str, RawDataset] = {
+    ds.name: ds
+    for ds in (HOURLY_LOAD, HOURLY_LMP, HOURLY_WIND, HOURLY_OIL, HOURLY_GAS)
+}
 
 
 # ---------------------------------------------------------------------------
@@ -262,7 +371,8 @@ def records_from_frame(frame: Any) -> list[dict[str, object]]:
     ``_handle_fuel_type_data`` fills an absent fuel column with ``numpy.nan``.
     Mapping ``NaN`` to ``None`` would make ``_first`` treat the column as absent and
     raise ``KeyError`` instead of the ``non-finite wind value at ts=...`` error that
-    ``wind_observations_from_records`` raises today. That guard stays live.
+    ``wind_observations_from_records`` raises today. That guard stays live. The same
+    reasoning covers ``fuel_observations_from_records``.
     """
     if not hasattr(frame, "to_dict"):
         raise TypeError(f"expected a pandas.DataFrame, got {type(frame).__name__}")
@@ -353,6 +463,82 @@ def wind_observations_from_records(
             raise ValueError(f"non-finite wind value at ts={ts.isoformat()}")
         observations.append(WindObservation(ts=ts, gen_mw=gen_mw, horizon_days=horizon_days))
     return observations
+
+
+def fuel_observations_from_records(
+    records: Iterable[dict[str, object]],
+    fuel: EIAFuelSeries,
+    *,
+    default_interval_minutes: float | None = None,
+) -> list[FuelGenObservation]:
+    """Normalize gridstatus EIA-930 fuel-type records for one fuel code.
+
+    **What ``0.0`` means here, and what this function cannot tell you.**
+    ``_handle_fuel_type_data`` pivots with ``aggfunc='sum'`` after ``astype(float)``
+    (gridstatus/eia.py:950-955), and pandas sums an all-null group to ``0.0`` at
+    the default ``min_count=0``. So a null EIA telemetry value arrives as ``0.0``,
+    indistinguishable from a real zero. ISO-NE petroleum output is legitimately
+    ``0.0`` for most hours of the year, so the two cases cannot be separated after
+    the fact. Do not read ``0.0`` as proof of zero output.
+
+    **What a NaN means.** Under a single-fuel facet the requested fuel column is
+    built from the returned rows, so it is never NaN-filled; only the other 14
+    fuel columns are. A NaN in the requested column therefore means the pivot
+    produced no such column at all, which is the signature of a renamed fuel in
+    the API. That is what the guard below catches. A missing hour is a different
+    failure and is invisible here: it is an absent row, so use
+    :func:`hourly_gaps`.
+
+    ``0.0`` is kept; NaN and infinity raise.
+    """
+    observations: list[FuelGenObservation] = []
+    for r in records:
+        ts = _as_datetime(_first(r, _TS_KEYS))
+        gen_mw = float(_first(r, fuel.frame_columns))  # type: ignore[arg-type]
+        if not math.isfinite(gen_mw):
+            raise ValueError(
+                f"non-finite {fuel.frame_columns[0]} value at ts={ts.isoformat()}: "
+                f"gridstatus NaN-fills an unreported fuel column, so EIA-930 returned "
+                f"no {fuel.code} rows for this hour"
+            )
+        observations.append(
+            FuelGenObservation(
+                ts=ts,
+                fuel_code=fuel.code,
+                gen_mw=gen_mw,
+                interval_minutes=_interval_minutes_for(
+                    r, ts, default_interval_minutes=default_interval_minutes
+                ),
+            )
+        )
+    return observations
+
+
+def hourly_gaps(timestamps: Iterable[datetime]) -> list[datetime]:
+    """Hours missing from an hourly series, between its own first and last reading.
+
+    EIA-930 omits an hour entirely when it has no row for the requested fuel, and
+    ``pivot_table`` then drops that hour from the index, so a gap arrives as a
+    shorter frame rather than as a NaN or an error
+    (docs/PLAN_EIA_OIL_GAS.md R4). Duplicates and unsorted input are tolerated.
+
+    Detects interior holes only. Truncation at either end is invisible here,
+    because the series defines its own bounds; compare ``rows_built`` against the
+    requested window for that. The eventual home for this gate is
+    ``etl validate`` (docs/PLAN.md Phase 2 step 2).
+    """
+    seen = sorted(set(timestamps))
+    if len(seen) < 2:
+        return []
+    step = timedelta(hours=1)
+    gaps: list[datetime] = []
+    cursor = seen[0] + step
+    for ts in seen[1:]:
+        while cursor < ts:
+            gaps.append(cursor)
+            cursor += step
+        cursor = ts + step
+    return gaps
 
 
 def lmp_observations_from_records(
@@ -542,23 +728,97 @@ class EIAWindSource:
         return gridstatus_version()
 
 
+class EIAFuelSource:
+    """Live EIA-930 hourly net generation for one fuel code (ISO-NE respondent).
+
+    Same key discipline as :class:`EIAWindSource`. No key is stored on the
+    instance, ``self._getenv`` is a callable rather than a mapping, and this is a
+    plain class rather than a ``@dataclass`` so no generated ``__repr__`` can
+    print a field that later holds a credential. Never call ``list_routes`` or
+    ``list_facets`` on the client: they pass the key as a URL query parameter.
+
+    Two deliberate differences from ``EIAWindSource``, both explained in
+    docs/PLAN_EIA_OIL_GAS.md: ``version_provider`` is injectable, so this module's
+    tests run with gridstatus absent (D6); and ``describe_query`` returns a single
+    line, so ``write_rows_csv`` cannot split the provenance banner (D5).
+    """
+
+    def __init__(
+        self,
+        fuel: EIAFuelSeries,
+        *,
+        respondent: str = EIA_ISONE_RESPONDENT,
+        client_factory: Callable[[], Any] = _default_eia_client,
+        getenv: Callable[[str], str | None] = os.environ.get,
+        version_provider: Callable[[], str] = gridstatus_version,
+    ) -> None:
+        self.fuel = fuel
+        self.respondent = respondent
+        self.source = fuel.source
+        self._client_factory = client_factory
+        self._getenv = getenv
+        self._version_provider = version_provider
+
+    def get_observations(self, start: date, end: date) -> list[object]:
+        require_eia_api_key(self._getenv)  # before the client is built (our message first)
+        client = self._client_factory()
+        # Build the facets mapping here, never from a module-level constant:
+        # gridstatus._facet_handler rewrites the caller's dict in place
+        # (gridstatus/eia.py:104-111), so a shared constant would be corrupted
+        # after the first call.
+        frame = client.get_dataset(
+            EIA_FUEL_TYPE_DATASET,
+            start=start.isoformat(),
+            end=end.isoformat(),
+            frequency="hourly",
+            facets={"respondent": self.respondent, "fueltype": self.fuel.code},
+        )
+        records = records_from_frame(frame)
+        return list(fuel_observations_from_records(records, self.fuel))
+
+    def describe_query(self, start: date, end: date) -> str:
+        return (
+            f"gridstatus.EIA().get_dataset('{EIA_FUEL_TYPE_DATASET}', "
+            f"start={start.isoformat()}, end={end.isoformat()}, frequency=hourly, "
+            f"facets={{respondent={self.respondent}, fueltype={self.fuel.code}}}) "
+            f"[column={self.fuel.frame_columns[0]}; fuel_code={self.fuel.code}; "
+            f"api key read from ${EIA_API_KEY_ENV}, value not recorded]"
+        )
+
+    def dataset_version(self) -> str:
+        return self._version_provider()
+
+
+def _reject_load_zone(dataset_name: str, zone: str) -> None:
+    """Guard: EIA-930 datasets are balancing-authority grain and take no load zone.
+
+    With ``dataset_name='wind'`` the message is byte-identical to the one
+    ``source_for`` raised inline before this helper existed.
+    """
+    if zone not in ("ISONE", "ISNE"):
+        raise ValueError(
+            f"the {dataset_name} dataset is EIA-930 balancing-authority data (respondent "
+            f"{EIA_ISONE_RESPONDENT}) and has no load zone; got --zone {zone!r}. "
+            f"Omit --zone or pass ISNE."
+        )
+
+
 def source_for(dataset_name: str, *, zone: str = "ISONE") -> Source:
     """Factory: the live provider Source for a dataset name.
 
-    ``load`` is wired to ISO-NE, ``wind`` to EIA-930. ``lmp`` raises a clear
-    NotImplementedError — the row/upsert layers already support it; only the
-    provider adapter remains, and it needs credentials not yet provisioned.
+    ``load`` is wired to ISO-NE; ``wind``, ``oil`` and ``gas`` to EIA-930.
+    ``lmp`` raises a clear NotImplementedError — the row/upsert layers already
+    support it; only the provider adapter remains, and it needs credentials not
+    yet provisioned.
     """
     if dataset_name == "load":
         return ISONELoadSource(zone=zone)
     if dataset_name == "wind":
-        if zone not in ("ISONE", "ISNE"):
-            raise ValueError(
-                f"the wind dataset is EIA-930 balancing-authority data (respondent "
-                f"{EIA_ISONE_RESPONDENT}) and has no load zone; got --zone {zone!r}. "
-                f"Omit --zone or pass ISNE."
-            )
+        _reject_load_zone("wind", zone)
         return EIAWindSource()
+    if dataset_name in EIA_FUEL_SERIES:
+        _reject_load_zone(dataset_name, zone)
+        return EIAFuelSource(EIA_FUEL_SERIES[dataset_name])
     if dataset_name in DATASETS:
         raise NotImplementedError(
             f"a live Source for dataset '{dataset_name}' is not wired yet; the "

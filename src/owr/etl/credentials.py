@@ -40,8 +40,9 @@ def require_eia_api_key(getenv: Callable[[str], str | None] = os.environ.get) ->
     if value is None or not value.strip():
         raise MissingCredentialError(
             f"no EIA API key. Set ${EIA_API_KEY_ENV} (free registration: "
-            f"https://www.eia.gov/opendata/register.php). The wind dataset needs "
-            f"it even for --dry-run, because --dry-run still performs the provider pull."
+            f"https://www.eia.gov/opendata/register.php). The EIA datasets (wind, "
+            f"oil, gas) need it even for --dry-run, because --dry-run still performs "
+            f"the provider pull."
         )
 
 
