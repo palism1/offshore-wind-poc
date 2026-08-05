@@ -81,6 +81,17 @@ class Config:
         ``STOP_AT_MIDNIGHT`` is the 22-triplets alternative. On a multi-day event
         the choice changes which hours get shaved at the day boundary. Flipping
         the default is a one-value change.
+
+    est_transmission_cost_per_mile_usd / est_storage_unit_cost_usd / solution_lifetime_years
+        OPEN team question (capital_cost_constants). Component 7's capital-cost
+        formulas need these three constants and every one is ``@`` in the source:
+        no value exists yet for any of them. **No code path reads these three
+        fields.** They park the wiring step that follows once the team supplies
+        values, and surface the open question in the ``config`` block of every
+        JSON report, mirroring ``storage_physics.py``, whose docstring says "Not
+        wired anywhere" for the same reason. They belong in ``Config`` and not in
+        ``cli.py`` because ``metrics.estimated_capital_cost_usd`` and
+        ``metrics.cost_per_equivalent_full_cycle_usd`` take them as parameters.
     """
 
     priority_demand_weight: float = 0.7
@@ -95,6 +106,9 @@ class Config:
     default_smooth_weight: float = 0.5
     default_peak_window_hours: int = 3
     default_peak_window_wrap: WrapConvention = WrapConvention.WRAP_TO_NEXT_DAY
+    est_transmission_cost_per_mile_usd: float | None = None
+    est_storage_unit_cost_usd: float | None = None
+    solution_lifetime_years: float | None = None
 
     def __post_init__(self) -> None:
         if abs((self.priority_demand_weight + self.priority_wind_weight) - 1.0) > 1e-9:
@@ -116,6 +130,14 @@ class Config:
             raise ValueError("default_peak_weight + default_smooth_weight must be > 0")
         if not 1 <= self.default_peak_window_hours <= HOURS_PER_DAY:
             raise ValueError(f"default_peak_window_hours must be in 1..{HOURS_PER_DAY}")
+        if self.est_transmission_cost_per_mile_usd is not None and (
+            self.est_transmission_cost_per_mile_usd < 0
+        ):
+            raise ValueError("est_transmission_cost_per_mile_usd must be non-negative")
+        if self.est_storage_unit_cost_usd is not None and self.est_storage_unit_cost_usd < 0:
+            raise ValueError("est_storage_unit_cost_usd must be non-negative")
+        if self.solution_lifetime_years is not None and self.solution_lifetime_years < 0:
+            raise ValueError("solution_lifetime_years must be non-negative")
 
 
 DEFAULT_CONFIG = Config()

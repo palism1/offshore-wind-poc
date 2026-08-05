@@ -32,8 +32,12 @@ from typing import TextIO
 from owr import scenario_input
 from owr.config import DEFAULT_CONFIG, Config
 from owr.initial_soc import charge_from_wind
+from owr.metrics import average_recharge_mismatch_mwh as _average_recharge_mismatch_mwh
+from owr.metrics import cycle_recharge_mismatch_mwh as _cycle_recharge_mismatch_mwh
 from owr.metrics import equivalent_full_cycles as _equivalent_full_cycles
-from owr.models import DayProfile, StorageAsset
+from owr.metrics import recharge_capacity_mismatch_fraction as _recharge_capacity_mismatch_fraction
+from owr.metrics import recharge_opportunity_mw as _recharge_opportunity_mw
+from owr.models import HOURS_PER_DAY, DayProfile, StorageAsset
 from owr.simulator import simulate
 from owr.stress_finder import find_stress_windows
 from owr.version import code_version
@@ -87,6 +91,26 @@ _OPEN_QUESTIONS_STATIC = {
             "its default is a labeled constant in cli.py rather than a Config field."
         ),
         "handoff_ref": "docs/HANDOFF.md open question 5",
+    },
+    "recharge_opportunity_definition": {
+        "flags": [],
+        "note": (
+            "Component 5 lists recharge_opportunity | MWh | @. Implemented as "
+            "surplus wind in the hour, before the state-of-charge and power "
+            "clamps. A forward-looking forecast reading is possible and would "
+            "measure forecast error instead."
+        ),
+        "handoff_ref": "docs/PLAN_METRICS_COMPONENT7.md open questions",
+    },
+    "recharge_capacity_denominator": {
+        "flags": [],
+        "note": (
+            "The source description cell for maximum_available_capacity is @. "
+            "Implemented as total_mwh - min_soc_mwh, the Overview's 70% "
+            "Available Charge band. The alternative, full total_mwh, differs by "
+            "about 1.43x."
+        ),
+        "handoff_ref": "docs/PLAN_METRICS_COMPONENT7.md open questions",
     },
 }
 
@@ -442,6 +466,39 @@ def _build_report(
 ) -> dict:
     energy_discharged = sum(h.discharge for d in result.daily for h in d.hourly)
     energy_charged = sum(h.charge for d in result.daily for h in d.hourly)
+
+    # One simulate() call is one span. Under --window N the span is one detected
+    # stress window; under --window all it is every file day after the lead days,
+    # so this total covers non-stress days too. The key name says "span" for that
+    # reason; see docs/PLAN_METRICS_COMPONENT7.md section 5.2.
+    opportunity: list[float] = []
+    actual: list[float] = []
+    for day_profile, day_result in zip(span, result.daily, strict=True):
+        wind = list(day_profile.hourly_wind_mw) or [0.0] * HOURS_PER_DAY
+        opportunity.extend(
+            _recharge_opportunity_mw(
+                hourly_wind_mw=wind,
+                hourly_load_mw=[h.gross_load for h in day_result.hourly],
+                hourly_discharge_mw=[h.discharge for h in day_result.hourly],
+            )
+        )
+        actual.extend(h.charge for h in day_result.hourly)
+    span_mismatch = _cycle_recharge_mismatch_mwh(
+        recharge_opportunity_mw=opportunity, actual_recharged_mw=actual
+    )
+    average_mismatch = _average_recharge_mismatch_mwh([span_mismatch])
+    if average_mismatch is None:  # unreachable: the list always holds one element
+        raise ValueError("average recharge mismatch is undefined for an empty span list")
+    max_available = asset.total_mwh - asset.min_soc_mwh
+    # Defensive: Config rejects a floor sum of 1.0, so max_available > 0 on every CLI path.
+    recharge_capacity_mismatch = (
+        _recharge_capacity_mismatch_fraction(
+            average_mismatch, maximum_available_capacity_mwh=max_available
+        )
+        if max_available > 0
+        else None
+    )
+
     equivalent_full_cycles = _equivalent_full_cycles(
         energy_discharged, rated_energy_mwh=asset.total_mwh
     )
@@ -521,6 +578,24 @@ def _build_report(
             "note": _OPEN_QUESTIONS_STATIC["cycles_per_year"]["note"],
             "handoff_ref": _OPEN_QUESTIONS_STATIC["cycles_per_year"]["handoff_ref"],
         },
+        {
+            "id": "recharge_opportunity_definition",
+            "flags": _OPEN_QUESTIONS_STATIC["recharge_opportunity_definition"]["flags"],
+            "value_used": "surplus wind after serving net load, before the SoC and power clamps",
+            "note": _OPEN_QUESTIONS_STATIC["recharge_opportunity_definition"]["note"],
+            "handoff_ref": _OPEN_QUESTIONS_STATIC["recharge_opportunity_definition"][
+                "handoff_ref"
+            ],
+        },
+        {
+            "id": "recharge_capacity_denominator",
+            "flags": _OPEN_QUESTIONS_STATIC["recharge_capacity_denominator"]["flags"],
+            "value_used": "total_mwh - min_soc_mwh",
+            "note": _OPEN_QUESTIONS_STATIC["recharge_capacity_denominator"]["note"],
+            "handoff_ref": _OPEN_QUESTIONS_STATIC["recharge_capacity_denominator"][
+                "handoff_ref"
+            ],
+        },
     ]
 
     return {
@@ -573,6 +648,10 @@ def _build_report(
             "window_share_of_annual_cycles": window_share,
             "min_capacity_margin_mw": min_margin,
             "min_capacity_margin_at": min_margin_at,
+            "recharge_opportunity_mwh": sum(opportunity),
+            "span_recharge_mismatch_mwh": span_mismatch,
+            "recharge_capacity_mismatch_fraction": recharge_capacity_mismatch,
+            "maximum_available_capacity_mwh": max_available,
         },
         "open_questions": open_questions,
     }
@@ -736,6 +815,9 @@ def _render_table(report: dict, args: argparse.Namespace, out: TextIO) -> None:
         len("equivalent full cycles"),
         len("share of assumed annual cycles"),
         len("min capacity margin"),
+        len("recharge opportunity"),
+        len("span recharge mismatch"),
+        len("recharge capacity mismatch"),
     ) + 4
     out.write(f"  {'baseline peak'.ljust(label_width)}{summary['baseline_peak_mw']:,.0f} MW\n")
     out.write(f"  {'reserve peak'.ljust(label_width)}{summary['reserve_peak_mw']:,.0f} MW\n")
@@ -769,6 +851,23 @@ def _render_table(report: dict, args: argparse.Namespace, out: TextIO) -> None:
             f"{summary['min_capacity_margin_mw']:,.0f} MW    "
             f"({at['date']} hour {at['hour']})\n"
         )
+    out.write(
+        f"  {'recharge opportunity'.ljust(label_width)}"
+        f"{summary['recharge_opportunity_mwh']:,.0f} MWh   "
+        "[OPEN: recharge_opportunity_definition]\n"
+    )
+    out.write(
+        f"  {'span recharge mismatch'.ljust(label_width)}"
+        f"{summary['span_recharge_mismatch_mwh']:,.0f} MWh   "
+        f"(opportunity - recharged, window {simulated['window']})\n"
+    )
+    rcm = summary["recharge_capacity_mismatch_fraction"]
+    rcm_str = f"{rcm * 100:.1f}%" if rcm is not None else "-"
+    out.write(
+        f"  {'recharge capacity mismatch'.ljust(label_width)}"
+        f"{rcm_str}    (of {summary['maximum_available_capacity_mwh']:,.0f} MWh available) "
+        "[OPEN: recharge_capacity_denominator]\n"
+    )
     out.write("\n")
 
     out.write("Open team questions carried by this run\n")

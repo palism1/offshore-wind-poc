@@ -511,3 +511,52 @@ def test_malformed_csv_exits_two(tmp_path):
     bad.write_text("date,hour,load_mw\nnot-a-date,0,100\n")
     code = cli.main(["--input", str(bad), "--storage-mwh", "20000", "--power-mw", "2000"])
     assert code == 2
+
+
+# --------------------------------------------------------------------------- #
+# Phase 4: recharge mismatch family wired into the summary
+# --------------------------------------------------------------------------- #
+
+
+def test_json_summary_carries_the_recharge_keys():
+    report = _report([])
+    summary = report["summary"]
+    assert "recharge_opportunity_mwh" in summary
+    assert "span_recharge_mismatch_mwh" in summary
+    assert "recharge_capacity_mismatch_fraction" in summary
+    assert "maximum_available_capacity_mwh" in summary
+    # examples/synthetic_winter_stress.csv wind never exceeds its net load
+    # (risk R7), so these are correct zeros, not a wiring fault.
+    assert summary["recharge_opportunity_mwh"] >= 0.0
+    assert summary["span_recharge_mismatch_mwh"] >= 0.0
+
+
+def test_span_recharge_mismatch_matches_opportunity_minus_charged():
+    report = _report([])
+    summary = report["summary"]
+    assert summary["span_recharge_mismatch_mwh"] == pytest.approx(
+        summary["recharge_opportunity_mwh"] - summary["energy_charged_mwh"]
+    )
+
+
+def test_table_output_contains_span_recharge_mismatch_and_open_marker(capsys):
+    code = cli.main(["--input", EXAMPLE, "--storage-mwh", "20000", "--power-mw", "2000"])
+    assert code == 0
+    out = capsys.readouterr().out
+    assert "span recharge mismatch" in out
+    assert "[OPEN: recharge_opportunity_definition]" in out
+
+
+def test_maximum_available_capacity_is_seventy_percent_at_default_fractions():
+    report = _report([])
+    assert report["summary"]["maximum_available_capacity_mwh"] == pytest.approx(0.70 * 20000)
+
+
+def test_render_table_renders_recharge_capacity_mismatch_as_percent():
+    # Doctored-report pattern, matching
+    # test_daily_table_columns_align_across_magnitudes.
+    report = _report([])
+    report["summary"]["recharge_capacity_mismatch_fraction"] = 0.05
+    buf = io.StringIO()
+    cli._render_table(report, argparse.Namespace(name=None), buf)
+    assert "5.0%" in buf.getvalue()

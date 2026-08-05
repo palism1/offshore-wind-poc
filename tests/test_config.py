@@ -102,3 +102,34 @@ def test_config_json_serializes_wrap_convention():
     payload = json.dumps(asdict(Config()))
     round_tripped = json.loads(payload)
     assert round_tripped["default_peak_window_wrap"] == "wrap_to_next_day"
+
+
+# --------------------------------------------------------------------------- #
+# Phase 5: capital cost constants (parked, unwired)
+# --------------------------------------------------------------------------- #
+
+
+def test_capital_cost_constants_default_to_none():
+    cfg = Config()
+    assert cfg.est_transmission_cost_per_mile_usd is None
+    assert cfg.est_storage_unit_cost_usd is None
+    assert cfg.solution_lifetime_years is None
+
+
+def test_capital_cost_constants_reject_negative_values():
+    with pytest.raises(ValueError):
+        Config(est_transmission_cost_per_mile_usd=-1.0)
+    with pytest.raises(ValueError):
+        Config(est_storage_unit_cost_usd=-1.0)
+    with pytest.raises(ValueError):
+        Config(solution_lifetime_years=-1.0)
+
+
+def test_capital_cost_constants_still_json_round_trip():
+    """Extends test_config_json_serializes_wrap_convention: three new null keys
+    join the config block and json.dumps(asdict(Config())) still round-trips."""
+    payload = json.dumps(asdict(Config()))
+    round_tripped = json.loads(payload)
+    assert round_tripped["est_transmission_cost_per_mile_usd"] is None
+    assert round_tripped["est_storage_unit_cost_usd"] is None
+    assert round_tripped["solution_lifetime_years"] is None
