@@ -720,7 +720,7 @@ class EIAWindSource:
         return (
             f"gridstatus.EIA().get_dataset('{EIA_FUEL_TYPE_DATASET}', "
             f"start={start.isoformat()}, end={end.isoformat()}, frequency=hourly, "
-            f"facets={{respondent={self.respondent}, fueltype={self.fuel_type}}})\n"
+            f"facets={{respondent={self.respondent}, fueltype={self.fuel_type}}}) "
             f"[api key read from ${EIA_API_KEY_ENV}; value not recorded]"
         )
 

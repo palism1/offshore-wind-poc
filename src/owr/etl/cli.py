@@ -16,6 +16,7 @@ from __future__ import annotations
 import argparse
 import io
 import json
+import math
 import os
 import sys
 from collections.abc import Callable, Sequence
@@ -28,6 +29,7 @@ from owr.config import DEFAULT_CONFIG
 from owr.etl.credentials import MissingCredentialError, redact_secrets
 from owr.etl.daily import IntervalReading, daily_frame, daily_loads_from_readings
 from owr.etl.demo_profile import (
+    HourlyLoad,
     hourly_loads_from_readings,
     percentile_ranks,
     render_day_profile_csv,
@@ -208,7 +210,10 @@ def cmd_demo_profile(
 
     Disposable bridge (docs/PLAN_REAL_DEMO_BRIDGE.md): reads real interval
     readings and writes the ``date,hour,load_mw,demand_percentile`` format
-    ``owr.scenario_input`` reads for the ``simulate`` CLI. Superseded by
+    ``owr.scenario_input`` reads for the ``simulate`` CLI. When one or more
+    ``--wind-input`` files are given, the output gains a ``wind_mw`` column and the
+    header becomes ``date,hour,load_mw,wind_mw,demand_percentile``
+    (docs/PLAN_DEMO_PROFILE_WIND.md). Superseded by
     ``docs/PLAN_SCENARIO_PROFILE_FORMAT.md`` when that format lands.
 
     Mirrors ``cmd_transform``'s injectable-callable shape and error handling: a
@@ -283,16 +288,59 @@ def _run_demo_profile(
     hourly_all = hourly_loads_from_readings(readings)
     hourly = [h for h in hourly_all if args.start <= h.date <= args.end]
 
+    wind_inputs = args.wind_inputs or []
+    wind_readings: list[IntervalReading] = []
+    wind_dataset = DATASETS["wind"]
+    for path in wind_inputs:
+        with open_input(path) as stream:
+            text = stream.read()
+        frame = read_rows_csv(io.StringIO(text), wind_dataset, origin=path)
+        if frame.empty:
+            print(f"etl demo-profile: {path}: 0 data rows, skipping", file=sys.stderr)
+            continue
+        for record in frame.to_dict("records"):
+            if _wind_horizon_days(record, path) != 0:
+                continue
+            wind_readings.append(_wind_reading_from_row(record, path))
+        provenance = _read_provenance_banner(text.splitlines())
+        provenance_tuples.add(
+            (
+                provenance.get("source", ""),
+                provenance.get("dataset_version", ""),
+                provenance.get("source_query", ""),
+                provenance.get("retrieved_at", ""),
+            )
+        )
+
+    if wind_inputs and not wind_readings:
+        raise ValueError("no realized (horizon_days = 0) wind rows in any --wind-input file")
+
+    wind_hourly: list[HourlyLoad] = []
+    if wind_inputs:
+        wind_hourly = [
+            h for h in hourly_loads_from_readings(wind_readings) if args.start <= h.date <= args.end
+        ]
+
     banner = _demo_profile_banner(
         args,
         season=season,
         population_days=int(len(population.index)),
         provenance_tuples=sorted(provenance_tuples),
     )
-    text = render_day_profile_csv(hourly, demand_percentile=demand_percentile, banner=banner)
+    text = render_day_profile_csv(
+        hourly,
+        demand_percentile=demand_percentile,
+        banner=banner,
+        wind=wind_hourly if wind_inputs else None,
+    )
 
     with open(args.out, "w", newline="", encoding="utf-8") as f:
         f.write(text)
+
+    if wind_inputs:
+        wind_summary = f"{len(wind_hourly)} hour(s) from {len(wind_inputs)} file(s)"
+    else:
+        wind_summary = "absent (no --wind-input)"
 
     print(f"etl demo-profile: wrote {args.out}")
     print(
@@ -301,9 +349,19 @@ def _run_demo_profile(
     )
     print(f"  season          = {season.value}")
     print(f"  population_days = {int(len(population.index))}")
+    print(f"  wind            = {wind_summary}")
     print(f"  provenance      = {len(provenance_tuples)} source pair(s)")
     return 0
 
+
+# raw.hourly_wind carries no interval_minutes column, so the wind rows CSV carries
+# no per-row width. The width is fixed by the frequency=hourly facet that each
+# file's own source_query banner records (owr.etl.extract.EIAWindSource). This
+# command does not read that facet back, so the width is an assumption about the
+# input. It is not a silent one: render_day_profile_csv rule 24 rejects any bucket
+# that does not cover 1.0 hour, so a five-minute series would build 12.0-hour
+# buckets and raise.
+_WIND_INTERVAL_HOURS = 1.0
 
 _PROVENANCE_BANNER_KEYS = ("source", "retrieved_at", "source_query", "dataset_version")
 
@@ -337,7 +395,10 @@ def _demo_profile_banner(
     population_days: int,
     provenance_tuples: list[tuple[str, str, str, str]],
 ) -> list[str]:
-    inputs_str = " ".join(f"--input {path}" for path in args.inputs)
+    parts = [f"--input {path}" for path in args.inputs]
+    parts += [f"--wind-input {path}" for path in (args.wind_inputs or [])]
+    inputs_str = " ".join(parts)
+    has_wind = bool(args.wind_inputs)
     lines = [
         "Real ISO-NE day-profile input for the simulator CLI. Generated, do not hand-edit.",
         "Superseded by docs/PLAN_SCENARIO_PROFILE_FORMAT.md when that format lands.",
@@ -349,9 +410,29 @@ def _demo_profile_banner(
         f"      complete {season.value} days in the inputs, N = {population_days}: "
         "count(load_mwh <= x) / N.",
         "      The per-season population choice is an open question (docs/HANDOFF.md).",
-        "ABSENT wind_mw: no real ISO-NE or EIA wind series exists in this repository. The",
-        "      EIA extractor has never run. No wind column is emitted and none is shaped.",
-        "      The engine therefore models zero recharge across this window.",
+    ]
+    if has_wind:
+        lines += [
+            "REAL  wind_mw: hourly wind generation, realized rows only (horizon_days = 0). One",
+            "      value per America/New_York wall-clock hour. No interpolation, no scaling.",
+            "      The producer, the query and the retrieval instant of every wind input are on",
+            "      the source lines below. A source that pivots an unreported hour to 0.0, as",
+            "      EIA-930 does, makes a 0.0 cell no proof of zero output.",
+            "ABSENT wind_forecast_frac: these rows are actual generation, not a forecast, and a",
+            "      fraction of capacity needs a wind nameplate capacity this repository does not",
+            "      hold. No proxy is emitted, so Priority(d) runs on the demand term alone",
+            "      [OPEN: wind_forecast_frac_derivation].",
+            "NOTE  wind is about 5% of ISO-NE system load in this window, 45 to 1,675 MW against",
+            "      14,341 to 20,127 MW. simulate's surplus-wind recharge is therefore 0.0 MWh in",
+            "      every hour. Pre-event charging through --lead-days does use these values.",
+        ]
+    else:
+        lines += [
+            "ABSENT wind_mw: no real ISO-NE or EIA wind series exists in this repository. The",
+            "      EIA extractor has never run. No wind column is emitted and none is shaped.",
+            "      The engine therefore models zero recharge across this window.",
+        ]
+    lines += [
         "NOTE  simulate recomputes its own percentile from this file alone. At the default",
         "      --severity-percentile 0.90 it reports no window inside a short file. Pass",
         "      --severity-percentile 0 to see the whole file as the one event.",
@@ -377,6 +458,30 @@ def _reading_from_row(row: dict[str, str], origin: str) -> IntervalReading:
         load_mw=float(row["load_mw"]),
         interval_hours=float(row["interval_minutes"]) / 60.0,
     )
+
+
+def _wind_reading_from_row(row: dict[str, str], origin: str) -> IntervalReading:
+    ts_str = row["ts"]
+    ts = datetime.fromisoformat(ts_str)
+    if ts.tzinfo is None:
+        raise ValueError(
+            f"{origin}: naive timestamp {ts_str!r} (row 'ts' must carry a UTC offset)"
+        )
+    gen_mw_str = row["gen_mw"]
+    if not gen_mw_str:
+        raise ValueError(f"{origin}: blank gen_mw at ts={ts_str}")
+    gen_mw = float(gen_mw_str)
+    if not math.isfinite(gen_mw):
+        raise ValueError(f"{origin}: non-finite gen_mw at ts={ts_str}")
+    return IntervalReading(ts=ts, load_mw=gen_mw, interval_hours=_WIND_INTERVAL_HOURS)
+
+
+def _wind_horizon_days(row: dict[str, str], origin: str) -> int:
+    raw = row["horizon_days"]
+    try:
+        return int(raw)
+    except ValueError as exc:
+        raise ValueError(f"{origin}: bad horizon_days {raw!r} at ts={row['ts']}") from exc
 
 
 def _write_daily_csv(path: str, frame: pd.DataFrame) -> None:
@@ -553,7 +658,8 @@ def build_parser() -> argparse.ArgumentParser:
     demo_profile_p = sub.add_parser(
         "demo-profile",
         help="bridge: real interval readings -> day-profile CSV for `simulate` "
-        "(docs/PLAN_REAL_DEMO_BRIDGE.md). Superseded by "
+        "(docs/PLAN_REAL_DEMO_BRIDGE.md); emits date,hour,load_mw,wind_mw,"
+        "demand_percentile when --wind-input is given. Superseded by "
         "docs/PLAN_SCENARIO_PROFILE_FORMAT.md when that format lands.",
     )
     demo_profile_p.add_argument(
@@ -589,6 +695,16 @@ def build_parser() -> argparse.ArgumentParser:
         choices=[s.value for s in Season],
         default=Season.WINTER.value,
         help="season population for demand_percentile (default: winter)",
+    )
+    demo_profile_p.add_argument(
+        "--wind-input",
+        action="append",
+        default=None,
+        dest="wind_inputs",
+        metavar="PATH",
+        help="a wind rows CSV written by `etl extract --dataset wind --out` "
+        "(repeatable; all inputs are pooled). Omit it to emit no wind_mw column. "
+        "Only realized rows (horizon_days = 0) are read.",
     )
     demo_profile_p.set_defaults(func=cmd_demo_profile)
 

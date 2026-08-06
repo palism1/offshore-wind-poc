@@ -271,3 +271,110 @@ def test_render_output_contains_no_wind_column():
     text = render_day_profile_csv(hourly, demand_percentile={d: 0.5}, banner=["no wind here"])
 
     assert "wind_mw" not in text
+
+
+def test_render_one_day_with_wind():
+    d = date(2026, 1, 24)
+    hourly = _full_day_hourly(d, 100.0)
+    wind = _full_day_hourly(d, 50.0)
+
+    text = render_day_profile_csv(
+        hourly, demand_percentile={d: 0.5}, banner=["banner"], wind=wind
+    )
+
+    lines = text.splitlines()
+    assert lines[1] == "date,hour,load_mw,wind_mw,demand_percentile"
+    data_lines = lines[2:]
+    assert len(data_lines) == 24
+    assert data_lines[0] == "2026-01-24,0,100.000,50.000,0.500000"
+
+
+def test_render_with_wind_round_trips_through_scenario_input():
+    d = date(2026, 1, 24)
+    hourly = _full_day_hourly(d, 100.0)
+    wind = _full_day_hourly(d, 50.0)
+
+    text = render_day_profile_csv(
+        hourly, demand_percentile={d: 0.5}, banner=["banner"], wind=wind
+    )
+    result = scenario_input.read_day_profiles(iter(text.splitlines(keepends=True)), origin="<test>")
+
+    assert result.has_wind is True
+    assert result.wind_forecast_frac_source == "default-zero"
+    day = result.days[0]
+    for hourly_wind in day.hourly_wind_mw:
+        assert hourly_wind == pytest.approx(50.0)
+
+
+def test_render_wind_missing_hour_raises_and_names_it():
+    d = date(2026, 1, 24)
+    hourly = _full_day_hourly(d, 100.0)
+    wind = [h for h in _full_day_hourly(d, 50.0) if h.hour != 5]
+
+    with pytest.raises(ValueError) as exc_info:
+        render_day_profile_csv(hourly, demand_percentile={d: 0.5}, banner=[], wind=wind)
+    message = str(exc_info.value)
+    assert d.isoformat() in message
+    assert "hour 5" in message
+
+
+def test_render_wind_bad_coverage_raises_and_names_wind():
+    d = date(2026, 1, 24)
+    hourly = _full_day_hourly(d, 100.0)
+    wind = [h for h in _full_day_hourly(d, 50.0) if h.hour != 5]
+    wind.append(HourlyLoad(date=d, hour=5, load_mwh=100.0, hours_covered=2.0, intervals=24))
+
+    with pytest.raises(ValueError) as exc_info:
+        render_day_profile_csv(hourly, demand_percentile={d: 0.5}, banner=[], wind=wind)
+    message = str(exc_info.value)
+    assert "wind_mw" in message
+    assert d.isoformat() in message
+    assert "5" in message
+
+
+def test_render_shared_dst_coverage_fault_names_dst_not_wind():
+    d = date(2026, 11, 1)  # a fall-back Sunday
+    hourly = [
+        HourlyLoad(date=d, hour=hour, load_mwh=100.0, hours_covered=1.0, intervals=12)
+        for hour in range(24)
+        if hour != 1
+    ]
+    hourly.append(HourlyLoad(date=d, hour=1, load_mwh=200.0, hours_covered=2.0, intervals=24))
+    wind = [
+        HourlyLoad(date=d, hour=hour, load_mwh=50.0, hours_covered=1.0, intervals=12)
+        for hour in range(24)
+        if hour != 1
+    ]
+    wind.append(HourlyLoad(date=d, hour=1, load_mwh=100.0, hours_covered=2.0, intervals=24))
+
+    with pytest.raises(ValueError) as exc_info:
+        render_day_profile_csv(hourly, demand_percentile={d: 0.5}, banner=[], wind=wind)
+    message = str(exc_info.value)
+    assert "daylight saving time" in message
+    assert "wind_mw" not in message
+
+
+def test_render_wind_date_outside_load_dates_is_ignored():
+    d1 = date(2026, 1, 24)
+    d_outside = date(2026, 1, 25)
+    hourly = _full_day_hourly(d1, 100.0)
+    wind = _full_day_hourly(d1, 50.0) + _full_day_hourly(d_outside, 60.0)
+
+    text = render_day_profile_csv(
+        hourly, demand_percentile={d1: 0.5}, banner=[], wind=wind
+    )
+
+    assert d_outside.isoformat() not in text
+
+
+def test_render_wind_value_formats_to_three_decimals():
+    d = date(2026, 1, 24)
+    hourly = _full_day_hourly(d, 100.0)
+    wind = [
+        HourlyLoad(date=d, hour=hour, load_mwh=1186.0, hours_covered=1.0, intervals=1)
+        for hour in range(24)
+    ]
+
+    text = render_day_profile_csv(hourly, demand_percentile={d: 0.5}, banner=[], wind=wind)
+
+    assert "1186.000" in text

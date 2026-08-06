@@ -125,6 +125,34 @@ def test_blank_cell_reads_back_as_empty_string(tmp_path):
     assert record["forecast_mw"] == ""
 
 
+def test_multi_line_source_query_stays_on_one_banner_line(tmp_path):
+    obs = [
+        WindObservation(
+            ts=datetime(2026, 1, 10, 0, tzinfo=UTC),
+            gen_mw=500.0,
+            forecast_mw=None,
+            horizon_days=0,
+        )
+    ]
+    # Built directly, not through Provenance.stamp, which already collapses newlines.
+    prov = Provenance(
+        source="fake.eia930.wind",
+        source_query="line one\nline two",
+        dataset_version="gridstatus==0.36.0",
+        retrieved_at=datetime(2026, 1, 11, tzinfo=UTC),
+    )
+    rows = build_rows(HOURLY_WIND, obs, prov)
+    path = tmp_path / "wind.csv"
+    write_rows_csv(str(path), HOURLY_WIND, rows, prov)
+    with open(path) as f:
+        frame = read_rows_csv(f, HOURLY_WIND, origin=str(path))
+    assert len(frame.index) == len(rows)
+    lines = path.read_text().splitlines()
+    header_index = next(i for i, line in enumerate(lines) if line.startswith("ts,"))
+    for line in lines[:header_index]:
+        assert line.startswith("#") or not line.strip()
+
+
 def test_over_long_data_row_is_rejected_at_any_position(tmp_path):
     header = "ts,zone,load_mw,interval_minutes,source,retrieved_at,source_query,dataset_version"
     ok_row = "2026-01-10T00:00:00+00:00,ISONE,8000.0,5.0,src,2026-01-11T00:00:00+00:00,q,v"

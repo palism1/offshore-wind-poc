@@ -20,8 +20,17 @@ Two functions bridge ``owr.etl.daily`` (interval readings) to
 * :func:`render_day_profile_csv` writes the two above into the
   ``date,hour,load_mw,demand_percentile`` format ``owr.scenario_input`` reads.
 
-No ``wind_mw`` column is emitted here, and none is shaped. There is no real ISO-NE
-or EIA wind series in this repository to shape one from.
+``render_day_profile_csv`` emits an optional ``wind_mw`` column. The column is off
+by default and appears only when the caller passes a ``wind`` rollup. The wind
+series goes through ``hourly_loads_from_readings`` as well, because an EIA-930
+hourly wind row and an ISO-NE five-minute load row are the same shape of input: a
+timestamped megawatt value with a width. ``HourlyLoad.load_mwh`` therefore holds
+wind energy on that path. A parallel dataclass would need a parallel integrator in
+a module that ``docs/PLAN_SCENARIO_PROFILE_FORMAT.md`` already supersedes.
+
+No ``wind_forecast_frac`` column is emitted, and none is derived. The rows are
+actual generation, and a fraction of capacity needs a wind nameplate capacity that
+this repository does not hold. See ``docs/PLAN_DEMO_PROFILE_WIND.md`` decision D1.
 """
 
 from __future__ import annotations
@@ -123,8 +132,9 @@ def render_day_profile_csv(
     *,
     demand_percentile: Mapping[date, float],
     banner: Sequence[str],
+    wind: Sequence[HourlyLoad] | None = None,
 ) -> str:
-    """Render ``hourly`` into the ``date,hour,load_mw,demand_percentile`` format.
+    """Render ``hourly`` (and, optionally, ``wind``) into the day-profile format.
 
     Each ``banner`` line is written with a leading ``# `` before the header. Every
     date must carry exactly the 24 hours 0..23, each within 1.0 +/- 0.01 hours
@@ -134,12 +144,24 @@ def render_day_profile_csv(
     about 2.0 hours (fall-back). Any other coverage shortfall is reported as a
     plain gap, with no mention of daylight saving time.
 
+    ``wind`` is ``None`` by default: the header stays
+    ``date,hour,load_mw,demand_percentile``, unchanged from before this column
+    existed. When ``wind`` is supplied, the header becomes
+    ``date,hour,load_mw,wind_mw,demand_percentile`` and every emitted
+    ``(date, hour)`` pair must have a matching wind bucket, at 1.0 +/- 0.01 hours
+    coverage. A wind bucket for a date the load series does not emit is ignored:
+    the load series alone decides which dates the file carries.
+
     No ``ts`` and no git revision are written, so the committed artifact stays
     byte stable across a data-only regeneration.
     """
     by_date: dict[date, dict[int, HourlyLoad]] = {}
     for h in hourly:
         by_date.setdefault(h.date, {})[h.hour] = h
+
+    wind_by_date: dict[date, dict[int, HourlyLoad]] = {}
+    for h in wind or ():
+        wind_by_date.setdefault(h.date, {})[h.hour] = h
 
     sorted_dates = sorted(by_date)
 
@@ -171,6 +193,16 @@ def render_day_profile_csv(
                     f"{bucket.hours_covered:.4f} hours, expected 1.0 +/- "
                     f"{_HOUR_TOLERANCE}"
                 )
+            if wind is not None:
+                wind_bucket = wind_by_date.get(d, {}).get(hour)
+                if wind_bucket is None:
+                    raise ValueError(f"{d.isoformat()} hour {hour}: no wind_mw value supplied")
+                if abs(wind_bucket.hours_covered - 1.0) > _HOUR_TOLERANCE:
+                    raise ValueError(
+                        f"{d.isoformat()} hour {hour}: wind_mw covers "
+                        f"{wind_bucket.hours_covered:.4f} hours, expected 1.0 +/- "
+                        f"{_HOUR_TOLERANCE}"
+                    )
         if d not in demand_percentile:
             raise ValueError(f"{d.isoformat()}: no demand_percentile supplied")
 
@@ -185,11 +217,21 @@ def render_day_profile_csv(
     for line in banner:
         buf.write(f"# {line}\n")
     writer = csv.writer(buf)
-    writer.writerow(["date", "hour", "load_mw", "demand_percentile"])
+    if wind is not None:
+        writer.writerow(["date", "hour", "load_mw", "wind_mw", "demand_percentile"])
+    else:
+        writer.writerow(["date", "hour", "load_mw", "demand_percentile"])
     for d in sorted_dates:
         dp_token = f"{demand_percentile[d]:.6f}"
         for hour in range(24):
             bucket = by_date[d][hour]
             avg_mw = bucket.load_mwh / bucket.hours_covered
-            writer.writerow([d.isoformat(), hour, f"{avg_mw:.3f}", dp_token])
+            if wind is not None:
+                wind_bucket = wind_by_date[d][hour]
+                wind_avg_mw = wind_bucket.load_mwh / wind_bucket.hours_covered
+                writer.writerow(
+                    [d.isoformat(), hour, f"{avg_mw:.3f}", f"{wind_avg_mw:.3f}", dp_token]
+                )
+            else:
+                writer.writerow([d.isoformat(), hour, f"{avg_mw:.3f}", dp_token])
     return buf.getvalue()

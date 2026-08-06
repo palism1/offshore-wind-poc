@@ -134,6 +134,26 @@ def test_table_stress_block_names_the_source(capsys):
     assert "Architecture 2026-08-05 Component 3" in out
 
 
+def test_table_states_wind_mw_present_when_the_file_carries_it(capsys):
+    code = cli.main(["--input", EXAMPLE, "--storage-mwh", "20000", "--power-mw", "2000"])
+    assert code == 0
+    out = capsys.readouterr().out
+    assert "wind_mw              present" in out
+
+
+def test_table_states_wind_mw_absent_when_the_file_lacks_it(tmp_path, capsys):
+    no_wind = tmp_path / "no_wind.csv"
+    lines = ["date,hour,load_mw\n"]
+    for hour in range(24):
+        lines.append(f"2026-01-01,{hour},1000.0\n")
+    no_wind.write_text("".join(lines))
+
+    code = cli.main(["--input", str(no_wind), "--storage-mwh", "20000", "--power-mw", "2000"])
+    assert code == 0
+    out = capsys.readouterr().out
+    assert "wind_mw              absent" in out
+
+
 def test_daily_table_columns_align_across_magnitudes():
     # Column starts must match the header regardless of how many digits a
     # value has, proving the table is built from one shared column layout
