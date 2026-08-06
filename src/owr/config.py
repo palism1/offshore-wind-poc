@@ -28,7 +28,7 @@ class Config:
     A value belongs here when an engine function or value object takes it as a
     parameter; reporting-only assumptions live with their consumer.
 
-    Attributes map to open questions in docs/PLAN.md / FACT_CHECK_REPORT.md:
+    Attributes map to open questions in docs/PLAN.md / docs/archive/reviews/FACT_CHECK_REPORT.md:
 
     priority_demand_weight / priority_wind_weight
         Architecture doc: ``Priority(d) = 0.7*DemandPercentile + 0.3*WindForecast``.

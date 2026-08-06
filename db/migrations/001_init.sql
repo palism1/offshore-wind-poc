@@ -6,9 +6,9 @@
 --     (source, retrieved_at, source_query, dataset_version).
 --   * Storage is a GENERIC long-duration asset (power/energy/efficiency/floors),
 --     so the pumped-hydro-vs-battery naming question never forks the schema
---     (FACT_CHECK_REPORT.md inconsistency #1).
+--     (docs/archive/reviews/FACT_CHECK_REPORT.md inconsistency #1).
 --   * Seasonal denominators live in features.constants with a derivation query,
---     never as literals (FACT_CHECK_REPORT.md, Unverifiable section).
+--     never as literals (docs/archive/reviews/FACT_CHECK_REPORT.md, Unverifiable section).
 
 CREATE EXTENSION IF NOT EXISTS timescaledb;
 

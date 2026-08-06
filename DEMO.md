@@ -1,7 +1,7 @@
 # Demo script
 
-Rehearsed 2026-08-06 on `worktree-review-fixes` at `1835290`. Every "expect"
-line below is output from that rehearsal, not a prediction. Total run time is
+Rehearsed 2026-08-06 on `main` at `b2b599b`. Every "expect" line below is
+output from that rehearsal, not a prediction. Total run time is
 under five minutes. The `demo-fallback` tag still points at the pre-fix
 rehearsal (`main` at `e889ea2`) if demo morning goes wrong.
 

@@ -5,8 +5,8 @@ Date: 2026-08-01. Point-in-time record, not current state.
 Question: one format, defined once, that `etl transform` writes and
 `owr.scenario_input.read_day_profiles` reads.
 
-Pipeline: `deep-build`. Stage 1 `scout` (Sonnet 5, model routing confirmed from the
-subagent transcript). Stage 2 `researcher` (Opus 5). Stage 3 `verifier` (Fable).
+Method: staged research. Stage 1 breadth survey, stage 2 depth reading, stage 3
+independent fact-check of every citation.
 
 ---
 
@@ -1014,7 +1014,7 @@ which columns the file carries.
 
 ## Stage 3 — fact-check (verifier)
 
-Date: 2026-08-02. Fable, high effort.
+Date: 2026-08-02. Independent fact-check pass.
 
 Scope: every cited repository line, all four data commands, twelve external sources, four
 arithmetic items. **Counts: 74 Verified, 4 Contradicted, 5 Unverifiable.**

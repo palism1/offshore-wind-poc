@@ -1,5 +1,5 @@
 # Software & Infrastructure Plan — Offshore Wind Reserve Scenario Tool
-Date: 2026-07-16 · Status: PLAN ONLY, nothing built yet
+Date: 2026-07-16 · Status: original plan; built status lives in README.md and docs/BOARD.md
 Scope: the Software & Infrastructure Lead role (PostgreSQL, ETL, backend, frontend support, deployment). Data science and modeling work belongs to the Data & Modeling Lead and is out of scope here.
 
 ## Guiding constraints (from the documents)
@@ -7,7 +7,7 @@ Scope: the Software & Infrastructure Lead role (PostgreSQL, ETL, backend, fronte
 - Target is the Scaling doc's **Goal B/C envelope**: 2 to 4 data sources, one low-complexity region (ISO-NE system-wide or Boston zone), no spatial data, no transmission losses, no flow directions, no inter-market interchange, no regulatory logic in code.
 - System rules: reliability first, economics second, efficiency third; output always prioritizes the cheapest reliable way to meet demand.
 - Provenance is a product feature: every result must be traceable to inputs (auditable results + AI explanations).
-- Storage is modeled as a **generic long-duration asset** (power MW, energy MWh, efficiency, soc_floor, strategic_reserve) so the pumped-hydro vs battery naming question never forks the code (see FACT_CHECK_REPORT.md).
+- Storage is modeled as a **generic long-duration asset** (power MW, energy MWh, efficiency, soc_floor, strategic_reserve) so the pumped-hydro vs battery naming question never forks the code (see docs/archive/reviews/FACT_CHECK_REPORT.md).
 
 ## Phase 0 — Foundation (repo + access)
 1. Create GitHub repo (per Scaling doc MVP checklist), Python 3.12, uv or poetry, ruff, pytest, pre-commit.
@@ -59,8 +59,8 @@ Every formula gets a unit test quoting the document line it implements; constant
 ## Phase 6 — Deployment
 - Docker compose for the demo (db + api + frontend); single cheap host (Fly.io / Render / small VPS) is sufficient for a POC. CI: lint + tests on PR.
 
-## Open questions for the team (from FACT_CHECK_REPORT.md)
-1. Canonical reserve definition: is 33% the soc_floor, or soc_floor + strategic_reserve?
+## Open questions for the team (from docs/archive/reviews/FACT_CHECK_REPORT.md)
+1. Canonical reserve definition: is 33% the soc_floor, or soc_floor + strategic_reserve? (The engine now models 0.20 floor + 0.10 strategic reserve summed into one protected floor, validated in `StorageAsset`; the open part is the team's canonical wording, not the code.)
 2. Fill in Architecture Steps 5/6 blanks and resolve the duplicate Step 6.
 3. One storage label for external comms (subsea pumped hydro vs battery); engine handles either.
 4. Define the empty Overview sections (Constraints, Metrics, Required Inputs, Success Criteria); proposal: adopt Phase 3 metrics list as the Metrics draft.

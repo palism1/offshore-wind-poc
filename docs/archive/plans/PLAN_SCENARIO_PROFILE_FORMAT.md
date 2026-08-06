@@ -1,6 +1,6 @@
 # Plan — scenario profile format
 
-Date: 2026-08-02. Deep-build stage 4, revision 1. Gate 1 approved the format on 2026-08-02.
+Date: 2026-08-02. Revision 1. Gate 1 approved the format on 2026-08-02.
 
 Research: `docs/RESEARCH_SCENARIO_FORMAT_2026-08-01.md`. Team contract:
 `docs/source/2026-07-30_Software_Architecture_Documentation.md`, Component 2 Data Contract at

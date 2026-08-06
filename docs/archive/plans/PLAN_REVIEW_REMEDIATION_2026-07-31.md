@@ -18,7 +18,7 @@ Findings 1 to 4 are docs and gate the pending commit; 5 to 9 are code nits on a 
 ## 1. Ground rules
 
 1. No `git commit`, `merge`, or `push` before Gate D.
-2. Stage by explicit path only. `docs/superpowers/` must not enter the index.
+2. Stage by explicit path only; local scratch directories must not enter the index.
 3. `docs/HANDOFF.md` and `RESUME_LOG.md` are gitignored and stay that way.
 4. `data/*.csv` is gitignored, so any number derived from it carries the file-header provenance values.
 5. Uncommitted text is corrected in place; committed text gets a dated append pointer. Everything above `docs/DATA_SOURCES.md:243` is committed.
@@ -200,7 +200,7 @@ All must pass before Gate D is offered.
 | C5 | `grep -rn "4,244,163\|0\.76%" docs/` | only the review's historical mentions and the lower-bound explanations from A1/A3 |
 | C6 | `grep -rn "4\.79 MWh" docs/DATA_SOURCES.md` | only the 12,249 m³ sentence |
 | C7 | `grep -c "2026-07-31" docs/DATA_SOURCES.md` | ≥ 4 |
-| C8 | `git status --short` | intended paths only; no `docs/superpowers`, `docs/HANDOFF.md`, `RESUME_LOG.md` |
+| C8 | `git status --short` | intended paths only; no local scratch or gitignored files |
 | C9 | `git diff` + open each untracked file | read every change before staging |
 
 ## Gate D: user check-off

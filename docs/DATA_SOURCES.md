@@ -6,7 +6,7 @@ trace to its inputs), so a source does not enter the ETL until it has a row here
 URL, format, cadence, auth requirement, and the engine/metric it feeds.
 
 Seeded from Mitchell's 2026-07-15 Discord source drop and the URLs already scattered
-across `DIAGRAM_REFERENCES.md`, `FACT_CHECK_REPORT.md`, `PLAN.md`, and `HANDOFF.md`.
+across `DIAGRAM_REFERENCES.md`, `docs/archive/reviews/FACT_CHECK_REPORT.md`, `PLAN.md`, and `HANDOFF.md`.
 
 Legend: **Status** — `confirmed` (agreed ingest input) · `candidate` (pending a team
 decision, see Open decisions below) · `reference` (informs design, not ingested).
@@ -39,7 +39,7 @@ decision, see Open decisions below) · `reference` (informs design, not ingested
 | Jordan Basin deep-water study (NOAA) | https://repository.library.noaa.gov/view/noaa/53045/noaa_53045_DS1.pdf | Primary-source depths for the Gulf's deep basins (Wilkinson/Jordan ~275 m, Georges 379 m) |
 
 Additional diagram/imagery references live in `DIAGRAM_REFERENCES.md`; claim-verification
-sources live in `FACT_CHECK_REPORT.md`. This file is for ingest and data provenance only.
+sources live in `docs/archive/reviews/FACT_CHECK_REPORT.md`. This file is for ingest and data provenance only.
 
 ## Percentile computation change — 2026-08-05
 
@@ -249,7 +249,7 @@ this study. It is a design assumption, not a product spec. Physics for the scena
   and 0.70 gives **4.5–5.0 MWh** (0.5–1.0 m wall). Sanity check on the model: the same
   geometry reproduces Fraunhofer's own 20 MWh at **701–779 m**, inside their published
   600–800 m band, so the shallow figure rests on a model that recovers the manufacturer's
-  headline number. Slightly below the 5.7–6.7 MWh/unit in `PROJECT_STATE_2026-07-28.md`
+  headline number. Slightly below the 5.7–6.7 MWh/unit in `docs/archive/reviews/PROJECT_STATE_2026-07-28.md`
   Tier 5, which assumed 0.75–0.80 efficiency rather than 0.70.
 
 A specific candidate depth still needs a depth-vs-distance point from the bathymetry viewers
@@ -291,7 +291,7 @@ Using `P = ρ·g·Q·h·η` with ρ=1025 kg/m³, g=9.81 m/s²:
 - **Consequence.** Duration is 12 h if 20 MWh/1.67 MW holds, ~3 h at the geometry-consistent
   ~5 MWh. Sphere count for a 40,000–60,000 MWh system reserve moves from ~2,000–3,000 to
   **~8,000–13,000**. Both rest on Report A's 40–60 GWh target, whose own derivation is loose
-  — see `FACT_CHECK_REPORT.md` addendum, internal inconsistency 7.
+  — see `docs/archive/reviews/FACT_CHECK_REPORT.md` addendum, internal inconsistency 7.
 
 Resolution: fix two of {outer diameter, head, energy per sphere} and let the third follow.
 Pending Mitchell's choice, the modeling default is 30 m + 200 m + ~5 MWh + 1.67 MW.

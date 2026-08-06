@@ -29,7 +29,7 @@ the primary-source verification of every claim.
 1. Install [uv](https://docs.astral.sh/uv/) (it manages Python 3.12 and the
    virtual environment for you).
 2. Optional: install Docker Desktop. You need it only for the Postgres-backed
-   store and its three gated tests. Everything else runs without it.
+   store and its four gated tests. Everything else runs without it.
 3. Optional: get a free [EIA API key](https://www.eia.gov/opendata/register.php).
    You need it only to pull fresh wind data. The committed examples already
    contain real data, so a demo needs no key.
@@ -151,7 +151,7 @@ src/owr/etl/        extract | transform | validate | demo-profile
 db/migrations/      PostgreSQL + TimescaleDB schema
 tests/              pytest suite, one test module per source module
 examples/           runnable day-profile CSVs (see below)
-docs/               plan, fact-check report, data-source registry, shipped-feature plans
+docs/               board, plan, data-source registry; dated history in docs/archive/
 docker-compose.yml  local Postgres 16 + TimescaleDB
 ```
 
