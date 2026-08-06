@@ -95,6 +95,30 @@ Operating Ranges", the Scenario Robustness Score blocker response. Winter data o
   implemented** in this codebase. They need per-event, winter-only wiring and oil
   and gas series; see `docs/archive/plans/PLAN_REVIEW_FIXES.md` section 1, out of scope.
 
+## Team percentile CSV cross-check — 2026-08-06
+
+Source: `iso_ne_winter_load_p_only.csv`, shared in the team resources channel on
+2026-08-06. Daily percentile of total ISO-NE load for five winters (2021-12-01 to
+2026-02-28, 451 data rows; four embedded repeat header rows need stripping before
+parsing). Not ingested; used as an external cross-check of this repo's numbers.
+
+- **Percentile basis confirmed pooled.** Exactly 10.0% of days sit at or above the
+  90th percentile, and per-winter maxima vary (95.23 in 2021-22 to 99.89 in
+  2025-26), which rules out per-winter ranking. Matches this repo's pooled
+  convention in `etl/transform.py`.
+- **Stress-window agreement.** All 11 days of the 2026-01-24 to 2026-02-03 event
+  sit at or above the 90th percentile in both that file and
+  `examples/real_winter_stress_2026.csv`. Window detection is identical.
+- **p90 boundary corroborated.** The file's author states the 90th-percentile
+  daily total is about 385,000 MWh; this repo's boundary day (2026-02-03,
+  percentile 90.4) totals 385,833 MWh. Independent computations, same number.
+- **Known small deltas, explained.** Per-day percentiles differ by up to 4.4
+  points because the example profile was generated ranking against four winters
+  (`load_2023.csv` to `load_2026.csv`, per its own provenance header) while the
+  team file pools five, adding 2021-22. Neither is wrong; regenerating the
+  profile with the fifth winter would close the gap and is an open choice, not a
+  defect.
+
 ## Onboarding / team resources
 
 | Resource | URL |
