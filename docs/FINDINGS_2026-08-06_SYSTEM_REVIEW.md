@@ -2,7 +2,8 @@
 
 Full-system adversarial review, dependency-ordered from `models.py` up to docs.
 All 596 tests pass and ruff is clean, so every finding below comes from targeted
-reproduction, not from the suite. Status: awaiting triage. No fixes applied.
+reproduction, not from the suite. Status: F1 to F8 fixed on worktree-review-fixes;
+see docs/PLAN_REVIEW_FIXES.md.
 
 ## Blocking
 

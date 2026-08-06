@@ -40,7 +40,7 @@ the primary-source verification of every claim.
 git clone https://github.com/palism1/offshore-wind-poc.git
 cd offshore-wind-poc
 uv sync --extra etl --extra api --extra viz   # env + all optional features
-uv run pytest                                 # expect: 596 passed, 4 skipped
+uv run pytest                                 # expect: 622 passed, 4 skipped
 uv run ruff check .                           # expect: All checks passed
 ```
 
@@ -56,9 +56,13 @@ uv run simulate --input examples/real_winter_stress_2026.csv \
 ```
 
 Expected result: the pre-event charging block reports state of charge 20,000 MWh
-to 48,794 MWh. Wind is about 5% of load inside this window, so in-window recharge
-is 0 MWh; the `--start-soc-mwh` and `--lead-days` flags are what make the wind
-series visible.
+to 20,000 MWh, no gain. ISO-NE system-wide wind almost never exceeds system load
+in this window, so pre-event charging (`initial_soc.charge_from_wind`) finds no
+surplus to charge from at any starting SoC; the engine reports this as the open
+question `wind_charge_source` rather than assuming a dedicated wind farm whose
+output would go to the reserve first. Drop `--start-soc-mwh 20000` to start the
+reserve fully charged (60,000 MWh) and see a non-trivial severity reduction
+instead.
 
 Sweep severity reduction across a ladder of storage sizes and render a chart:
 
@@ -131,7 +135,10 @@ Model constants that the source documents leave open (reserve floor, priority
 weights 0.7/0.3, 80% energy-budget rule, round-trip efficiency) are named,
 documented values in `src/owr/config.py`, never magic numbers. Each docstring
 names the team question it maps to. Override them per run through the CLI flags
-(`uv run simulate --help` lists every one with its labeled default).
+(`uv run simulate --help` lists every one with its labeled default). Efficiency
+is round trip, measured at the terminals: the engine splits it symmetrically,
+applying `sqrt(efficiency)` on each leg, so `--efficiency 0.72` realizes 0.72
+round trip and never needs pre-squaring.
 
 ## Layout
 

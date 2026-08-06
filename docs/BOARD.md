@@ -1,6 +1,6 @@
 # Job Board
 
-synced 2026-07-24T04:56:46.667Z
+synced 2026-08-06T22:00:00.000Z
 
 ## In Progress
 
@@ -8,7 +8,6 @@ synced 2026-07-24T04:56:46.667Z
 - [Import price analysis — Alexander](https://discord.com/channels/1527018571912446132/1527871615864541184) [Data] — Owner: _unassigned_
 - [Wind forecast accuracy vs real-time observations — Alexander](https://discord.com/channels/1527018571912446132/1527871527528431697) [Modeling] — Owner: _unassigned_
 - [Winter and summer load profile analysis — Alexander](https://discord.com/channels/1527018571912446132/1527871300888953012) [Data] — Owner: _unassigned_
-- [Build ETL transform, daily aggregation and denominators — Mikko](https://discord.com/channels/1527018571912446132/1527871203434299665) [Validation, Software] — Owner: kKomi
 
 ## Open
 
@@ -18,7 +17,7 @@ synced 2026-07-24T04:56:46.667Z
 
 ## Blocked
 
-- [Build ETL extract, raw ISO-NE load ingestion — Mikko](https://discord.com/channels/1527018571912446132/1527870917152211024) [Software] — Owner: _unassigned_
+- [Build ETL extract, raw ISO-NE load ingestion — Mikko](https://discord.com/channels/1527018571912446132/1527870917152211024) [Software] — Owner: _unassigned_ — `src/owr/etl/extract.py` and its tests ship, but the live ISO-NE pull stays unverified: ISO-NE Web Services credentials are still not provisioned, so the extract skeleton runs against fixtures only.
 
 ## Done
 
@@ -28,3 +27,5 @@ synced 2026-07-24T04:56:46.667Z
 - [Add the EIA-930 oil and gas hourly generation extractor — Mikko](docs/PLAN_EIA_OIL_GAS.md) [Software] — Owner: Mikko — 2026-08-05, 505 passed / 4 skipped, ruff clean
 - [Build the scenario sweep chart (`sweep` CLI) — Mikko](docs/PLAN_SCENARIO_SWEEP.md) [Software] — Owner: Mikko — 2026-08-05, 552 passed / 4 skipped with the `viz` extra (548 passed / 8 skipped without it), ruff clean
 - [Sync the code to the 2026-08-05 Architecture export — Mikko](docs/PLAN_ARCH_0805_SYNC.md) [Software] — Owner: Mikko — 2026-08-05, 572 passed / 4 skipped, ruff clean
+- [Build ETL transform, daily aggregation and denominators — Mikko](https://discord.com/channels/1527018571912446132/1527871203434299665) [Validation, Software] — Owner: kKomi — 2026-08-05, `src/owr/etl/transform.py` and `tests/test_etl_transform.py` both ship
+- [Fix review findings F1 to F8 (efficiency semantics, discharge floor, net-load accounting, reserve validation, charging rule, annotation wording) — Mikko](docs/PLAN_REVIEW_FIXES.md) [Software] — Owner: Mikko — 2026-08-06, 622 passed / 4 skipped, ruff clean
