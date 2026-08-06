@@ -7,11 +7,12 @@ percentile. Pure function over a daily series; no I/O.
 from __future__ import annotations
 
 from collections.abc import Sequence
+from dataclasses import replace
 from datetime import timedelta
 
 import numpy as np
 
-from owr.models import DailyLoadLike, StressWindow
+from owr.models import DailyLoadLike, HourlyLoadLike, StressWindow
 
 
 def percentile_threshold(values: Sequence[float], percentile: float) -> float:
@@ -46,6 +47,8 @@ def find_stress_windows_at_threshold(
     days: Sequence[DailyLoadLike],
     threshold: float,
     min_window_days: int,
+    *,
+    severity_percentile: float | None = None,
 ) -> list[StressWindow]:
     """Runs of >= min_window_days consecutive CALENDAR days at or above `threshold`.
 
@@ -57,6 +60,12 @@ def find_stress_windows_at_threshold(
     Input is expected sorted ascending by date. It is deliberately NOT sorted
     here; an out-of-order series yields shorter runs rather than silently merged
     ones.
+
+    ``severity_percentile`` is recorded on every window this call emits and is
+    never used to compute anything. Callers that derived ``threshold`` from a
+    percentile pass it so the window can report both halves of the source's
+    ``load_percentile_threshold`` field. Callers that chose a threshold directly
+    leave it ``None``.
     """
     if min_window_days < 1:
         raise ValueError("min_window_days must be >= 1")
@@ -68,36 +77,35 @@ def find_stress_windows_at_threshold(
     windows: list[StressWindow] = []
     run_start: int | None = None
 
+    def emit(run_start: int, run_end: int) -> None:
+        length = run_end - run_start + 1
+        if length >= min_window_days:
+            windows.append(
+                StressWindow(
+                    start=days[run_start].date,
+                    end=days[run_end].date,
+                    days=length,
+                    threshold_mwh=threshold,
+                    severity_percentile=severity_percentile,
+                )
+            )
+
     for i in range(len(days)):
         if stressed[i]:
             if run_start is None:
                 run_start = i
             elif days[i].date != days[i - 1].date + timedelta(days=1):
                 # Gap: close the run ending at i-1, then open a new one at i.
-                _emit(windows, days, run_start, i - 1, min_window_days)
+                emit(run_start, i - 1)
                 run_start = i
         elif run_start is not None:
-            _emit(windows, days, run_start, i - 1, min_window_days)
+            emit(run_start, i - 1)
             run_start = None
 
     if run_start is not None:
-        _emit(windows, days, run_start, len(days) - 1, min_window_days)
+        emit(run_start, len(days) - 1)
 
     return windows
-
-
-def _emit(
-    windows: list[StressWindow],
-    days: Sequence[DailyLoadLike],
-    run_start: int,
-    run_end: int,
-    min_window_days: int,
-) -> None:
-    length = run_end - run_start + 1
-    if length >= min_window_days:
-        windows.append(
-            StressWindow(start=days[run_start].date, end=days[run_end].date, days=length)
-        )
 
 
 def find_stress_windows(
@@ -115,4 +123,50 @@ def find_stress_windows(
             raise ValueError("min_window_days must be >= 1")
         return []
     threshold = percentile_threshold([d.load_mwh for d in days], severity_percentile)
-    return find_stress_windows_at_threshold(days, threshold, min_window_days)
+    return find_stress_windows_at_threshold(
+        days, threshold, min_window_days, severity_percentile=severity_percentile
+    )
+
+
+def with_peak_hourly_load(
+    windows: Sequence[StressWindow],
+    days: Sequence[HourlyLoadLike],
+) -> list[StressWindow]:
+    """Return copies of ``windows`` with ``peak_hourly_load_mw`` filled in.
+
+    Implements the Component 3 ``peak_hourly_load`` output field (Unit "MW?",
+    Description "@") of
+    ``docs/source/2026-08-05_Software_Architecture_Documentation.md``. The value is
+    the maximum hourly load in MW over every hour of every day from ``start`` to
+    ``end`` inclusive.
+
+    A separate function, and not part of ``find_stress_windows``: detection takes
+    ``DailyLoadLike``, which has no hourly series, and widening that protocol would
+    break the ETL path, whose points are daily totals. A caller that holds
+    ``DayProfile`` objects calls this straight after detection. A caller that does
+    not leaves the field ``None``.
+
+    Never mutates its input. The Architecture doc's Global Interface Contract says
+    a component shall never modify another component's output.
+
+    Raises ``ValueError`` when a window covers a date absent from ``days``, or a
+    date whose hourly series is empty.
+    """
+    by_date = {d.date: tuple(d.hourly_load_mw) for d in days}
+    out: list[StressWindow] = []
+    for w in windows:
+        peak: float | None = None
+        day = w.start
+        while day <= w.end:
+            hours = by_date.get(day)
+            if hours is None:
+                raise ValueError(
+                    f"window {w.start} .. {w.end} covers a date absent from days: {day}"
+                )
+            if not hours:
+                raise ValueError(f"date {day} carries an empty hourly load series")
+            day_peak = max(hours)
+            peak = day_peak if peak is None else max(peak, day_peak)
+            day += timedelta(days=1)
+        out.append(replace(w, peak_hourly_load_mw=peak))
+    return out
