@@ -124,6 +124,19 @@ def test_dailyload_accepted_by_find_stress_windows_at_threshold():
     assert windows[0].days == 3
 
 
+def test_etl_path_leaves_severity_percentile_none():
+    # Pins the split between the StressWindow object and the ETL event frame
+    # (docs/PLAN_ARCH_0805_SYNC.md decision D9): find_windows_per_winter calls
+    # find_stress_windows_at_threshold exactly as below, with no percentile named,
+    # so severity_percentile stays None on the object even though threshold_mwh is
+    # set. peak_hourly_load_mw is never enriched on the ETL path either.
+    days = [_day(date(2021, 12, 1 + i), 500_000.0) for i in range(3)]
+    windows = find_stress_windows_at_threshold(days, threshold=400_000.0, min_window_days=2)
+    assert windows[0].severity_percentile is None
+    assert windows[0].threshold_mwh == 400_000.0
+    assert windows[0].peak_hourly_load_mw is None
+
+
 def test_event_frame_columns_and_dtypes():
     days = [_day(date(2021, 12, 1 + i), 500_000.0) for i in range(3)]
     events = find_windows_per_winter(_frame(days), threshold_mwh=400_000.0, min_window_days=2)

@@ -86,11 +86,79 @@ class DayProfile:
 
 @dataclass(frozen=True)
 class StressWindow:
-    """A run of consecutive stressed days found by stress_finder."""
+    """A run of consecutive stressed days found by ``stress_finder``.
+
+    Implements the Component 3 output table of
+    ``docs/source/2026-08-05_Software_Architecture_Documentation.md``. That table
+    names four fields whose Description cell is still ``@``: ``first_hour_index``
+    (hour), ``last_hour_index`` (hour), ``peak_hourly_load`` ("MW?") and
+    ``load_percentile_threshold`` (Percentile). The readings below are documented
+    choices, not sourced facts. OPEN team question (stress_window_output_fields):
+    see docs/PLAN_ARCH_0805_SYNC.md decisions D4 to D7.
+
+    start / end / days
+        Inclusive calendar bounds and the day count. These carry the source's
+        ``event_start_date``, ``event_end_date`` and ``event_duration``.
+
+    threshold_mwh / severity_percentile
+        The two halves of the source's single ``load_percentile_threshold`` field.
+        The Unit cell reads "Percentile", which points at ``severity_percentile``
+        (the fraction, 0.90 by default). The field name points at the MWh cut value
+        applied to the day totals. This repo already models both, as
+        ``owr.etl.transform.ThresholdResult.percentile`` and ``.threshold_mwh``, so
+        both travel with the window. ``threshold_mwh`` is set on every detection
+        path. ``severity_percentile`` is ``None`` when the caller supplied a
+        threshold directly and never named a percentile, which is the ETL path.
+
+    peak_hourly_load_mw
+        The highest single-hour gross load over every hour of every day in the
+        window, in MW. ``None`` until ``stress_finder.with_peak_hourly_load``
+        attaches it, because detection runs on ``DailyLoadLike``, which carries a
+        daily total and no hourly series. The source Unit cell reads "MW?". At
+        one-hour resolution the peak hour's energy in MWh is the same number as its
+        average power in MW, so the open part is which label the team wants, not
+        which value.
+    """
 
     start: date
     end: date
     days: int
+    threshold_mwh: float | None = None
+    severity_percentile: float | None = None
+    peak_hourly_load_mw: float | None = None
+
+    def __post_init__(self) -> None:
+        if self.severity_percentile is not None and not 0.0 <= self.severity_percentile <= 1.0:
+            raise ValueError("severity_percentile must be in [0, 1]")
+        if self.peak_hourly_load_mw is not None and self.peak_hourly_load_mw < 0:
+            raise ValueError("peak_hourly_load_mw must be non-negative")
+
+    @property
+    def first_hour_index(self) -> int:
+        """Source Component 3 ``first_hour_index`` (Unit: hour). Always 0.
+
+        The settled rule is daily: "daily_load >= 90th percentile for
+        minimum_window consecutive days". An event therefore starts at the first
+        hour of its start date, and no sub-day start hour exists to report.
+
+        The index is event-local. An absolute index would need an origin for the
+        hour axis, and no detection path has a stable one: the ETL path allows
+        gaps, and the simulator CLI path would count from whichever file the
+        operator passed. See docs/PLAN_ARCH_0805_SYNC.md decision D4, which also
+        records the mixed source evidence.
+        """
+        return 0
+
+    @property
+    def last_hour_index(self) -> int:
+        """Source Component 3 ``last_hour_index`` (Unit: hour).
+
+        ``HOURS_PER_DAY * days - 1``: the last hour of the end date on the same
+        event-local axis. Both indices are a pure function of ``days`` under the
+        daily rule, so they are properties and never stored. A stored copy could
+        drift, and a persisted copy would need a migration to change.
+        """
+        return HOURS_PER_DAY * self.days - 1
 
 
 class DailyLoadLike(Protocol):
@@ -103,6 +171,22 @@ class DailyLoadLike(Protocol):
 
     date: date
     load_mwh: float
+
+
+class HourlyLoadLike(Protocol):
+    """What ``stress_finder.with_peak_hourly_load`` needs: a date and the day's
+    hourly loads in MW.
+
+    ``DayProfile`` satisfies this structurally. ``owr.etl.daily.DailyLoad`` does
+    not, and must not: the ETL path reduces interval readings to a daily total
+    before window detection runs, so no hourly series survives that far. That is
+    why this protocol is separate from ``DailyLoadLike`` instead of an extension of
+    it. Not marked ``runtime_checkable``, for the same reason ``DailyLoadLike`` is
+    not.
+    """
+
+    date: date
+    hourly_load_mw: tuple[float, ...]
 
 
 class WrapConvention(StrEnum):

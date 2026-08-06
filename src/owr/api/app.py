@@ -24,9 +24,9 @@ from owr import metrics
 from owr.api import schemas
 from owr.api.store import InMemoryRepository, Repository, RunRecord
 from owr.config import DEFAULT_CONFIG
-from owr.models import DayProfile, StorageAsset
+from owr.models import DayProfile, StorageAsset, StressWindow
 from owr.simulator import simulate
-from owr.stress_finder import find_stress_windows
+from owr.stress_finder import find_stress_windows, with_peak_hourly_load
 from owr.version import code_version
 
 
@@ -59,6 +59,22 @@ def _severity_reduction(baseline_peak: float, reserve_peak: float) -> float:
     return metrics.severity_reduction(baseline_peak, reserve_peak)
 
 
+def _window_json(w: StressWindow) -> dict:
+    """The wire shape for one stress window across the API layer. Mirrors
+    ``schemas.StressWindowOut`` and matches ``cli._window_json`` key for key. The
+    persisted shape in ``pg_store`` is different and is named apart."""
+    return {
+        "start": w.start.isoformat(),
+        "end": w.end.isoformat(),
+        "days": w.days,
+        "first_hour_index": w.first_hour_index,
+        "last_hour_index": w.last_hour_index,
+        "peak_hourly_load_mw": w.peak_hourly_load_mw,
+        "threshold_mwh": w.threshold_mwh,
+        "severity_percentile": w.severity_percentile,
+    }
+
+
 def _annotation(scenario: schemas.ScenarioCreate, run: RunRecord) -> tuple[dict, str]:
     """Build the decision-package payload and a deterministic, provenance-tagged
     plain-language explanation. No external AI call: the POC ships an auditable
@@ -69,10 +85,7 @@ def _annotation(scenario: schemas.ScenarioCreate, run: RunRecord) -> tuple[dict,
     payload = {
         "code_version": run.code_version,
         "scenario": scenario.model_dump(mode="json"),
-        "stress_windows": [
-            {"start": w.start.isoformat(), "end": w.end.isoformat(), "days": w.days}
-            for w in run.stress_windows
-        ],
+        "stress_windows": [_window_json(w) for w in run.stress_windows],
         "summary": {
             "baseline_peak_mw": res.baseline_peak_mw,
             "reserve_peak_mw": res.reserve_peak_mw,
@@ -135,8 +148,9 @@ def create_app(repo: Repository | None = None) -> FastAPI:
             run.status = "running"
             days = _day_profiles(body.days)
             asset = _asset(inp)
-            run.stress_windows = find_stress_windows(
-                days, inp.severity_percentile, inp.min_stress_window_days
+            run.stress_windows = with_peak_hourly_load(
+                find_stress_windows(days, inp.severity_percentile, inp.min_stress_window_days),
+                days,
             )
             starting_soc = (
                 body.starting_soc if body.starting_soc is not None else inp.storage_start_mwh
@@ -182,10 +196,7 @@ def create_app(repo: Repository | None = None) -> FastAPI:
         run_id: int, r: Repository = Depends(get_repo)
     ) -> list[schemas.StressWindowOut]:
         run = _require_completed_run(r, run_id)
-        return [
-            schemas.StressWindowOut(start=w.start, end=w.end, days=w.days)
-            for w in run.stress_windows
-        ]
+        return [schemas.StressWindowOut(**_window_json(w)) for w in run.stress_windows]
 
     @app.get("/runs/{run_id}/results", response_model=schemas.RunResultsOut)
     def get_results(run_id: int, r: Repository = Depends(get_repo)) -> schemas.RunResultsOut:

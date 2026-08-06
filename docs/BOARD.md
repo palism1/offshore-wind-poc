@@ -27,3 +27,4 @@ synced 2026-07-24T04:56:46.667Z
 - [Implement metrics.py toward Architecture Component 7 — Mikko](docs/PLAN_METRICS_COMPONENT7.md) [Software] — Owner: Mikko — 2026-08-05, 459 passed / 3 skipped, ruff clean
 - [Add the EIA-930 oil and gas hourly generation extractor — Mikko](docs/PLAN_EIA_OIL_GAS.md) [Software] — Owner: Mikko — 2026-08-05, 505 passed / 4 skipped, ruff clean
 - [Build the scenario sweep chart (`sweep` CLI) — Mikko](docs/PLAN_SCENARIO_SWEEP.md) [Software] — Owner: Mikko — 2026-08-05, 552 passed / 4 skipped with the `viz` extra (548 passed / 8 skipped without it), ruff clean
+- [Sync the code to the 2026-08-05 Architecture export — Mikko](docs/PLAN_ARCH_0805_SYNC.md) [Software] — Owner: Mikko — 2026-08-05, 572 passed / 4 skipped, ruff clean

@@ -153,6 +153,39 @@ class PostgresRepository:
 # -- serialization helpers --------------------------------------------------
 
 
+def _persisted_window_json(w: StressWindow) -> dict:
+    """The persisted shape for one stress window. **Not the wire shape**; the wire
+    shape lives in ``api/app.py`` and carries two more keys.
+
+    Stores the constructor fields only. ``first_hour_index`` and
+    ``last_hour_index`` are ``StressWindow`` properties derived from ``days``, so a
+    stored copy could go stale and would need a migration to change. They are
+    recomputed on load instead.
+    """
+    return {
+        "start": w.start.isoformat(),
+        "end": w.end.isoformat(),
+        "days": w.days,
+        "threshold_mwh": w.threshold_mwh,
+        "severity_percentile": w.severity_percentile,
+        "peak_hourly_load_mw": w.peak_hourly_load_mw,
+    }
+
+
+def _window_from_persisted(row: dict) -> StressWindow:
+    """Inverse of :func:`_persisted_window_json`. Uses ``.get`` for the three fields
+    added 2026-08-05, so a row written before that date still loads, with ``None``
+    in each."""
+    return StressWindow(
+        start=date.fromisoformat(row["start"]),
+        end=date.fromisoformat(row["end"]),
+        days=row["days"],
+        threshold_mwh=row.get("threshold_mwh"),
+        severity_percentile=row.get("severity_percentile"),
+        peak_hourly_load_mw=row.get("peak_hourly_load_mw"),
+    )
+
+
 def _summary_json(run: RunRecord) -> dict:
     res = run.result
     assert res is not None
@@ -160,10 +193,7 @@ def _summary_json(run: RunRecord) -> dict:
         "final_soc": res.final_soc,
         "baseline_peak_mw": res.baseline_peak_mw,
         "reserve_peak_mw": res.reserve_peak_mw,
-        "stress_windows": [
-            {"start": w.start.isoformat(), "end": w.end.isoformat(), "days": w.days}
-            for w in run.stress_windows
-        ],
+        "stress_windows": [_persisted_window_json(w) for w in run.stress_windows],
     }
 
 
@@ -260,14 +290,7 @@ def _load_result(conn: psycopg.Connection, run_id: int, summary: dict) -> Simula
 
 
 def _load_windows(summary: dict) -> list[StressWindow]:
-    return [
-        StressWindow(
-            start=date.fromisoformat(w["start"]),
-            end=date.fromisoformat(w["end"]),
-            days=w["days"],
-        )
-        for w in summary.get("stress_windows", [])
-    ]
+    return [_window_from_persisted(w) for w in summary.get("stress_windows", [])]
 
 
 def _load_decision_package(conn: psycopg.Connection, run_id: int) -> dict | None:

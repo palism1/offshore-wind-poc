@@ -37,9 +37,9 @@ from owr.metrics import cycle_recharge_mismatch_mwh as _cycle_recharge_mismatch_
 from owr.metrics import equivalent_full_cycles as _equivalent_full_cycles
 from owr.metrics import recharge_capacity_mismatch_fraction as _recharge_capacity_mismatch_fraction
 from owr.metrics import recharge_opportunity_mw as _recharge_opportunity_mw
-from owr.models import HOURS_PER_DAY, DayProfile, StorageAsset
+from owr.models import HOURS_PER_DAY, DayProfile, StorageAsset, StressWindow
 from owr.simulator import simulate
-from owr.stress_finder import find_stress_windows
+from owr.stress_finder import find_stress_windows, with_peak_hourly_load
 from owr.version import code_version
 
 # Reporting-only assumption: no engine function takes it, so it is not a Config
@@ -63,15 +63,31 @@ _OPEN_QUESTIONS_STATIC = {
     "stress_event_definition": {
         "flags": ["--severity-percentile", "--min-stress-window-days"],
         "note": (
-            "Settled 2026-07-28: daily total demand at or above a percentile of "
-            "the series, with a run of N consecutive such days forming an event. "
-            "Report B's 12-hour rule (12+ hours above threshold within a day) is "
-            "retired. What remains open is the threshold value on real data: both "
-            "published numbers (3,504 and 16,750 MWh) are hourly-basis and do not "
-            "carry over to a daily-basis rule, so a fresh p90 must be computed on "
-            "daily sums."
+            "Rule and percentile are doc-sourced as of the 2026-08-05 "
+            "Architecture export, Component 3: 'Determine: 90th historical "
+            "daily load percentile. A stress event begins when: daily_load >= "
+            "90th percentile for minimum_window consecutive days.' Report B's "
+            "12-hour rule is retired. Still open: the threshold value in MWh on "
+            "real data. Both published numbers (3,504 and 16,750 MWh) are "
+            "hourly-basis and do not carry over to a daily-basis rule, so a "
+            "fresh p90 must be computed on daily sums. The source gives "
+            "minimum_window no value, so 2 stays a team choice."
         ),
         "handoff_ref": "docs/HANDOFF.md open question 2",
+    },
+    "stress_window_output_fields": {
+        "flags": [],
+        "note": (
+            "Component 3 names four output fields whose description cell is @: "
+            "first_hour_index, last_hour_index, peak_hourly_load (unit 'MW?') "
+            "and load_percentile_threshold. Implemented readings: the two hour "
+            "indices are event-local and run 0 to 24*days-1, so under the daily "
+            "rule they are a pure function of the duration; peak_hourly_load is "
+            "the highest single-hour gross load in MW across the window; "
+            "load_percentile_threshold travels as both the percentile and the "
+            "MWh cut value, because the unit cell and the field name disagree."
+        ),
+        "handoff_ref": "docs/PLAN_ARCH_0805_SYNC.md decisions D4 to D7",
     },
     "reserve_usage_rules": {
         "flags": ["--soc-floor-frac", "--strategic-reserve-frac"],
@@ -214,8 +230,8 @@ def build_parser() -> argparse.ArgumentParser:
         type=_finite_float,
         default=cfg.default_severity_percentile,
         help=(
-            f"stress-day percentile threshold (default {cfg.default_severity_percentile}) "
-            "[OPEN: stress_event_definition]"
+            f"stress-day percentile threshold (default {cfg.default_severity_percentile}, "
+            "sourced: Architecture 2026-08-05 Component 3) [OPEN: stress_event_definition]"
         ),
     )
     parser.add_argument(
@@ -224,7 +240,8 @@ def build_parser() -> argparse.ArgumentParser:
         default=cfg.default_min_stress_window_days,
         help=(
             f"minimum consecutive stressed days forming an event "
-            f"(default {cfg.default_min_stress_window_days}) [OPEN: stress_event_definition]"
+            f"(default {cfg.default_min_stress_window_days}, team choice; the source names "
+            "minimum_window and gives no value) [OPEN: stress_event_definition]"
         ),
     )
     parser.add_argument(
@@ -348,6 +365,7 @@ def _run(args: argparse.Namespace) -> int:
     )
 
     windows = find_stress_windows(days, args.severity_percentile, args.min_stress_window_days)
+    windows = with_peak_hourly_load(windows, days)
 
     if args.list_windows:
         _render_list_windows(day_set, windows, args, sys.stdout)
@@ -565,6 +583,15 @@ def _build_report(
             "handoff_ref": _OPEN_QUESTIONS_STATIC["stress_event_definition"]["handoff_ref"],
         },
         {
+            "id": "stress_window_output_fields",
+            "flags": _OPEN_QUESTIONS_STATIC["stress_window_output_fields"]["flags"],
+            "value_used": "hours 0..24*days-1; peak in MW; threshold as percentile and MWh",
+            "note": _OPEN_QUESTIONS_STATIC["stress_window_output_fields"]["note"],
+            "handoff_ref": _OPEN_QUESTIONS_STATIC["stress_window_output_fields"][
+                "handoff_ref"
+            ],
+        },
+        {
             "id": "reserve_usage_rules",
             "flags": _OPEN_QUESTIONS_STATIC["reserve_usage_rules"]["flags"],
             "value_used": f"{args.soc_floor_frac} + {args.strategic_reserve_frac}",
@@ -621,10 +648,7 @@ def _build_report(
         "config": asdict(cfg),
         "dispatch": {"peak_weight": args.peak_weight, "smooth_weight": args.smooth_weight},
         "reporting": {"cycles_per_year": args.cycles_per_year},
-        "stress_windows": [
-            {"start": w.start.isoformat(), "end": w.end.isoformat(), "days": w.days}
-            for w in windows
-        ],
+        "stress_windows": [_window_json(w) for w in windows],
         "simulated": {
             "window": window_label,
             "lead_days_used": lead_days_used,
@@ -662,6 +686,23 @@ def _render_json(report: dict, out: TextIO) -> None:
     out.write("\n")
 
 
+def _window_json(w: StressWindow) -> dict:
+    """One JSON shape for a stress window, shared by the report and by
+    ``--list-windows``. Carries the Component 3 output fields; the two hour indices
+    are read from ``StressWindow`` properties and are never stored on the object.
+    """
+    return {
+        "start": w.start.isoformat(),
+        "end": w.end.isoformat(),
+        "days": w.days,
+        "first_hour_index": w.first_hour_index,
+        "last_hour_index": w.last_hour_index,
+        "peak_hourly_load_mw": w.peak_hourly_load_mw,
+        "threshold_mwh": w.threshold_mwh,
+        "severity_percentile": w.severity_percentile,
+    }
+
+
 def _render_list_windows(
     day_set: scenario_input.DayProfileSet, windows: list, args: argparse.Namespace, out: TextIO
 ) -> None:
@@ -675,10 +716,7 @@ def _render_list_windows(
                 "date_start": day_set.days[0].date.isoformat(),
                 "date_end": day_set.days[-1].date.isoformat(),
             },
-            "stress_windows": [
-                {"start": w.start.isoformat(), "end": w.end.isoformat(), "days": w.days}
-                for w in windows
-            ],
+            "stress_windows": [_window_json(w) for w in windows],
         }
         out.write(json.dumps(payload, indent=2))
         out.write("\n")
@@ -688,10 +726,23 @@ def _render_list_windows(
         f"stress windows (severity >= {args.severity_percentile:.3f} percentile, "
         f">= {args.min_stress_window_days} consecutive day(s))   [OPEN: stress_event_definition]\n"
     )
+    out.write(
+        "  source: Architecture 2026-08-05 Component 3. The percentile is sourced; "
+        "the minimum_window value is a team choice.\n"
+    )
+    out.write(
+        "  fields: hour indices are event-local; peak is the highest single hour, MW"
+        "   [OPEN: stress_window_output_fields]\n"
+    )
     if not windows:
         out.write("  none\n")
     for i, w in enumerate(windows, 1):
-        out.write(f"  {i}   {w.start.isoformat()} .. {w.end.isoformat()}   {w.days} days\n")
+        peak = w.peak_hourly_load_mw
+        peak_str = f"{peak:,.0f} MW" if peak is not None else "-"
+        out.write(
+            f"  {i}   {w.start.isoformat()} .. {w.end.isoformat()}   {w.days} days   "
+            f"hours {w.first_hour_index}..{w.last_hour_index}   peak {peak_str}\n"
+        )
 
 
 def _render_table(report: dict, args: argparse.Namespace, out: TextIO) -> None:
@@ -751,8 +802,21 @@ def _render_table(report: dict, args: argparse.Namespace, out: TextIO) -> None:
         f"  rule: daily energy >= {cfg['default_severity_percentile']:.3f} percentile of the "
         f"series; >= {cfg['default_min_stress_window_days']} consecutive days\n"
     )
+    out.write(
+        "  source: Architecture 2026-08-05 Component 3. The percentile is sourced; "
+        "the minimum_window value is a team choice.\n"
+    )
+    out.write(
+        "  fields: hour indices are event-local; peak is the highest single hour, MW"
+        "   [OPEN: stress_window_output_fields]\n"
+    )
     for i, w in enumerate(report["stress_windows"], 1):
-        out.write(f"  {i}   {w['start']} .. {w['end']}   {w['days']} days\n")
+        peak = w["peak_hourly_load_mw"]
+        peak_str = f"{peak:,.0f} MW" if peak is not None else "-"
+        out.write(
+            f"  {i}   {w['start']} .. {w['end']}   {w['days']} days   "
+            f"hours {w['first_hour_index']}..{w['last_hour_index']}   peak {peak_str}\n"
+        )
     out.write(
         f"  simulated: window {simulated['window']} "
         f"({simulated['date_start']} .. {simulated['date_end']})   "

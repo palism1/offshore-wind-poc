@@ -73,8 +73,9 @@ def test_config_defaults_match_scenario_create_defaults():
 def test_default_severity_percentile_is_0_90():
     """Pins the 2026-07-28 decision (HANDOFF.md decision 2): stress-event
     identification is settled at daily total demand >= the historical 90th
-    percentile. Checked on both surfaces so the two cannot silently drift back
-    apart (same three-surface pattern as tests/test_reserve_defaults.py)."""
+    percentile. Doc-sourced 2026-08-05 by the Architecture export, Component 3.
+    Checked on both surfaces so the two cannot silently drift back apart (same
+    three-surface pattern as tests/test_reserve_defaults.py)."""
     assert Config().default_severity_percentile == 0.90
     assert _scenario_defaults().severity_percentile == 0.90
 

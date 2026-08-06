@@ -5,6 +5,12 @@ docs/FACT_CHECK_REPORT.md "Common Mistakes": the 0.7/0.3 weights, 80% budget and
 33% floor are decisions to benchmark against literature and label, never facts to
 verify). They are surfaced as configuration so a scenario can override them and so
 the open questions in docs/PLAN.md never get hard-coded as magic numbers.
+
+**One exception, as of 2026-08-05: ``default_severity_percentile``.** The
+Architecture export of that date fixes the 90th percentile in Component 3, so that
+field is sourced and the rule above does not apply to it. It stays in this class
+because ``stress_finder`` takes it as a parameter and a scenario may still override
+it. Its attribute entry below carries the source quote.
 """
 
 from __future__ import annotations
@@ -53,16 +59,25 @@ class Config:
         20% floor may each be drawn down (until decided, both are treated as one
         protected floor).
 
-    default_severity_percentile / default_min_stress_window_days
-        Stress-event detection parameters passed to ``stress_finder``. **Settled**
-        2026-07-28 (HANDOFF.md decision 2): a day is stressed when its daily total
-        demand sits at or above the historical 90th percentile of the series, and
-        a run of ``default_min_stress_window_days`` (2+) consecutive such days
-        forms an event. Report B's competing 12-hour rule (12+ hours above
-        threshold within a day) is retired. What remains open is the **threshold
-        value on real data**: both published numbers (3,504 and 16,750 MWh) are
-        hourly-basis and do not carry over to a daily-basis rule, so a fresh p90
-        must be computed on daily sums.
+    default_severity_percentile
+        **Doc-sourced** 2026-08-05. The Architecture export
+        ``docs/source/2026-08-05_Software_Architecture_Documentation.md``,
+        Component 3, states: "Determine: 90th historical daily load percentile. A
+        stress event begins when: daily_load >= 90th percentile for minimum_window
+        consecutive days." The 0.90 default is that number, and it is the one value
+        in this class the source now fixes.
+        OPEN team question (stress_event_definition) is **narrowed, not closed**.
+        The source fixes the rule and the percentile. It leaves the **threshold
+        value in MWh on real data** open: both published numbers (3,504 and 16,750
+        MWh) are hourly-basis and do not carry over to a daily-basis rule, so a
+        fresh p90 must be computed on daily sums.
+
+    default_min_stress_window_days
+        The ``minimum_window`` of the Component 3 rule above. The source names the
+        parameter and gives it no value, so 2 stays a **team design choice**.
+        Settled 2026-07-28 (HANDOFF.md decision 2) at 2 or more consecutive days.
+        Report B's competing 12-hour rule (12+ hours above an hourly threshold
+        within a day) is retired.
 
     default_peak_weight / default_smooth_weight
         Relative emphasis of peak shaving vs ramp smoothing in ``dispatch``. The

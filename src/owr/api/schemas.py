@@ -30,6 +30,9 @@ class ScenarioCreate(BaseModel):
     date_start: date
     date_end: date
     min_stress_window_days: int = Field(default=2, ge=1)
+    # 0.90 is sourced: Architecture 2026-08-05 Component 3, "90th historical daily
+    # load percentile". min_stress_window_days is the source's minimum_window, which
+    # the source leaves without a value; 2 is a team choice.
     severity_percentile: float = Field(default=0.90, ge=0, le=1.0)
     transmission_limit_mw: float | None = None
     available_capacity_mw: float | None = None
@@ -68,9 +71,20 @@ class RunOut(BaseModel):
 
 
 class StressWindowOut(BaseModel):
+    """Component 3 event row. ``first_hour_index`` and ``last_hour_index`` are
+    derived from ``days`` on the engine side and are echoed here, never stored.
+    The three optional fields are ``None`` when the detection path could not supply
+    them. See docs/PLAN_ARCH_0805_SYNC.md decisions D4 to D7.
+    """
+
     start: date
     end: date
     days: int
+    first_hour_index: int
+    last_hour_index: int
+    peak_hourly_load_mw: float | None = None
+    threshold_mwh: float | None = None
+    severity_percentile: float | None = None
 
 
 class HourlyResultOut(BaseModel):
