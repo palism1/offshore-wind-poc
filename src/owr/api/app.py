@@ -82,6 +82,9 @@ def _annotation(scenario: schemas.ScenarioCreate, run: RunRecord) -> tuple[dict,
     assert run.result is not None
     res = run.result
     reduction = _severity_reduction(res.baseline_peak_mw, res.reserve_peak_mw)
+    # The run succeeded, so the asset is valid by construction (StorageAsset.__post_init__
+    # already ran once when the run built it).
+    asset = _asset(scenario)
     payload = {
         "code_version": run.code_version,
         "scenario": scenario.model_dump(mode="json"),
@@ -91,16 +94,24 @@ def _annotation(scenario: schemas.ScenarioCreate, run: RunRecord) -> tuple[dict,
             "reserve_peak_mw": res.reserve_peak_mw,
             "severity_reduction": reduction,
             "final_soc_mwh": res.final_soc,
+            "min_soc_mwh": asset.min_soc_mwh,
         },
     }
     n_windows = len(run.stress_windows)
+    # F6: state the floor position the run actually measured, rather than assuming
+    # "above". Reachable without F1: a scenario whose storage_start_mwh sits under
+    # the floor can never discharge and ends under the floor, so this branch is
+    # live even on an otherwise-correct run. Do not delete it as dead.
+    above = res.final_soc >= asset.min_soc_mwh - 1e-6
+    position = "above" if above else "below"
     annotation = (
         f"Across {len(res.daily)} simulated day(s) the reserve cut the worst hour of "
         f"net load from {res.baseline_peak_mw:,.0f} MW to {res.reserve_peak_mw:,.0f} MW, "
         f"a {reduction * 100:.1f}% reduction in peak severity. "
         f"{n_windows} stress window(s) met the {scenario.severity_percentile:.0%} "
         f"severity threshold over at least {scenario.min_stress_window_days} day(s). "
-        f"The reserve ended at {res.final_soc:,.0f} MWh, above its protected floor. "
+        f"The reserve ended at {res.final_soc:,.0f} MWh, {position} its protected "
+        f"floor of {asset.min_soc_mwh:,.0f} MWh. "
         f"(engine {run.code_version})"
     )
     return payload, annotation

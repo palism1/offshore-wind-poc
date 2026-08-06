@@ -150,3 +150,28 @@ def test_run_with_an_impossible_floor_is_rejected_not_silently_zero(client: Test
     run = client.post(f"/scenarios/{sid}/runs", json={"days": _days()})
     assert run.status_code == 422
     assert client.get("/runs/1").json()["status"] == "failed"
+
+
+def test_annotation_states_the_floor_position_from_the_result(client: TestClient):
+    sid = client.post("/scenarios", json=_scenario_body()).json()["id"]
+    run = client.post(f"/scenarios/{sid}/runs", json={"days": _days()})
+    rid = run.json()["id"]
+    pkg = client.post(f"/runs/{rid}/decision-package").json()
+    assert "above its protected floor of" in pkg["annotation"]
+    assert "min_soc_mwh" in pkg["payload"]["summary"]
+
+
+def test_annotation_says_below_when_the_run_ends_under_the_floor(client: TestClient):
+    # F6: reachable without F1. storage_start_mwh (100) sits under the default
+    # fractions' floor (0.20 + 0.10 = 0.30 of 1000 = 300 MWh), so the reserve can
+    # never discharge and ends under the floor.
+    body = _scenario_body()
+    del body["soc_floor_frac"]
+    del body["strategic_reserve_frac"]
+    body["storage_total_mwh"] = 1000
+    body["storage_start_mwh"] = 100
+    sid = client.post("/scenarios", json=body).json()["id"]
+    run = client.post(f"/scenarios/{sid}/runs", json={"days": _days()})
+    rid = run.json()["id"]
+    pkg = client.post(f"/runs/{rid}/decision-package").json()
+    assert "below its protected floor" in pkg["annotation"]
