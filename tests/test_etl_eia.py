@@ -249,10 +249,11 @@ def test_wind_describe_query_contents():
     assert "$EIA_API_KEY" in text
 
 
-def test_wind_describe_query_is_deterministic():
+def test_wind_describe_query_is_single_line_and_deterministic():
     src = EIAWindSource()
     a = src.describe_query(date(2026, 1, 1), date(2026, 1, 8))
     b = src.describe_query(date(2026, 1, 1), date(2026, 1, 8))
+    assert "\n" not in a
     assert a == b
 
 

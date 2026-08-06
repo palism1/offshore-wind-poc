@@ -29,7 +29,10 @@ class Provenance:
         the same logical extract overwrites rather than duplicates.
     source_query
         The exact, reproducible query issued to the provider, e.g.
-        ``"gridstatus.ISONE().get_load(start=2026-01-01, end=2026-01-02)"``.
+        ``"gridstatus.ISONE().get_load(start=2026-01-01, end=2026-01-02)"``. A
+        newline in this value reaches both the CSV banner and every row's
+        ``source_query`` cell, and both readers work on physical lines, so
+        :meth:`stamp` collapses any newline onto one line before it is stored.
     dataset_version
         The provider/library version the pull was made against, e.g.
         ``'gridstatus==0.30.1'``. Never a literal buried in code — it is captured
@@ -65,7 +68,7 @@ class Provenance:
         """Create a Provenance for a batch, defaulting ``retrieved_at`` to now (UTC)."""
         return cls(
             source=source,
-            source_query=source_query,
+            source_query=" ".join(source_query.splitlines()),
             dataset_version=dataset_version,
             retrieved_at=retrieved_at or datetime.now(UTC),
         )

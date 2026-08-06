@@ -141,6 +141,13 @@ def test_provenance_as_columns_has_the_four_schema_columns():
     assert set(cols) == {"source", "retrieved_at", "source_query", "dataset_version"}
 
 
+def test_stamp_collapses_a_multi_line_source_query():
+    prov = Provenance.stamp("s", "line one\nline two", "v")
+    assert prov.source_query == "line one line two"
+    single = Provenance.stamp("s", "one line", "v")
+    assert single.source_query == "one line"
+
+
 # --------------------------------------------------------------------------- #
 # Row building — provenance stamped on every row, correct column order         #
 # --------------------------------------------------------------------------- #
