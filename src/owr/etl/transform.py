@@ -1,4 +1,4 @@
-"""Threshold and window orchestration (docs/PLAN_EIA_EXTRACTOR.md Phase B3).
+"""Threshold and window orchestration (docs/archive/plans/PLAN_EIA_EXTRACTOR.md Phase B3).
 
 Ties together ``owr.etl.daily``, ``owr.etl.seasons``, and ``owr.stress_finder``:
 
@@ -14,7 +14,7 @@ Ties together ``owr.etl.daily``, ``owr.etl.seasons``, and ``owr.stress_finder``:
   mechanism raises on a gap; gaps are reported by ``validate`` (Phase B4), not
   fatal here.
 
-docs/PLAN_PANDAS_ADOPTION.md phase 5 moved the daily and event tables onto
+docs/archive/plans/PLAN_PANDAS_ADOPTION.md phase 5 moved the daily and event tables onto
 ``pandas.DataFrame``. ``daily_loads_from_readings`` (owr.etl.daily) still
 accumulates with Python ``sum()``; only the table assembly, filtering and
 rendering below is pandas.
@@ -129,7 +129,7 @@ def find_windows_per_winter(
     **The event frame carries only event rows.** A winter with no event contributes
     no row, by design. The label set lives in :func:`winter_labels`, and the CLI
     joins the two. Do not try to recover the label set from the event frame; that
-    is the defect docs/PLAN_PANDAS_ADOPTION.md revision 1 fixes (finding B1).
+    is the defect docs/archive/plans/PLAN_PANDAS_ADOPTION.md revision 1 fixes (finding B1).
 
     The doc calls the identifier ``winter_id`` and describes it as a hash. This
     repo has a readable label and no hash; ``winter_label`` stays, and no

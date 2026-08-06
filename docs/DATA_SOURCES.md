@@ -44,7 +44,7 @@ sources live in `FACT_CHECK_REPORT.md`. This file is for ingest and data provena
 ## Percentile computation change — 2026-08-05
 
 `stress_finder.percentile_threshold` now calls `numpy.quantile` instead of a hand-rolled
-linear-interpolation formula (`docs/PLAN_PANDAS_ADOPTION.md` phase 2). The two implementations
+linear-interpolation formula (`docs/archive/plans/PLAN_PANDAS_ADOPTION.md` phase 2). The two implementations
 differ by at most about 1e-15 relative, measured over 20,000 random series. The set of days
 classified as stressed is provably unchanged: 200,000 adversarial trials found zero stress-set
 flips (full argument in `stress_finder.py`'s `percentile_threshold` docstring).
@@ -93,7 +93,7 @@ Operating Ranges", the Scenario Robustness Score blocker response. Winter data o
   already implemented in `cli._build_report` as `total_mwh - min_soc_mwh`.
 - The four metrics this document defines, CMDR, SWE, FOP and RCM, are **not
   implemented** in this codebase. They need per-event, winter-only wiring and oil
-  and gas series; see `docs/PLAN_REVIEW_FIXES.md` section 1, out of scope.
+  and gas series; see `docs/archive/plans/PLAN_REVIEW_FIXES.md` section 1, out of scope.
 
 ## Onboarding / team resources
 

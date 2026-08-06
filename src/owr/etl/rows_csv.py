@@ -1,4 +1,4 @@
-"""CSV read/write for extracted ``raw.*`` rows (docs/PLAN_EIA_EXTRACTOR.md Phase A3).
+"""CSV read/write for extracted ``raw.*`` rows (docs/archive/plans/PLAN_EIA_EXTRACTOR.md Phase A3).
 
 Keeps file I/O out of ``extract.py``, which is deliberately I/O-free below the
 provider. The banner convention mirrors ``scenario_input.read_day_profiles``:
@@ -90,7 +90,7 @@ def read_rows_csv(stream: TextIO, dataset: RawDataset, *, origin: str) -> pd.Dat
 
     Two inputs that ``csv.DictReader`` accepted are now rejected, both malformed:
     a data row with more fields than the header, and an unclosed quoted field. See
-    docs/PLAN_PANDAS_ADOPTION.md admitted changes A1 and A2.
+    docs/archive/plans/PLAN_PANDAS_ADOPTION.md admitted changes A1 and A2.
     """
     filtered = [line for line in stream if line.strip() and not line.lstrip().startswith("#")]
     if not filtered:

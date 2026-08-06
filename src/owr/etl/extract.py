@@ -98,7 +98,7 @@ class FuelGenObservation:
     requires it: energy is ``gen_mw * interval_minutes / 60``, and an assumed
     width is a silent multiplicative error. EIA-930 fuel-type data is hourly, so
     the value is 60 in practice, derived from ``Interval End - Interval Start``
-    rather than hard-coded (docs/PLAN_EIA_OIL_GAS.md D3).
+    rather than hard-coded (docs/archive/plans/PLAN_EIA_OIL_GAS.md D3).
     """
 
     ts: datetime
@@ -261,7 +261,7 @@ HOURLY_WIND = RawDataset(
 )
 
 # Oil and gas share one table: the row's natural key is (source, ts, fuel_code),
-# so a second fuel code never collides with a first (docs/PLAN_EIA_OIL_GAS.md D1).
+# so a second fuel code never collides with a first (docs/archive/plans/PLAN_EIA_OIL_GAS.md D1).
 FUEL_GEN_TABLE = "raw.hourly_fuel_gen"
 FUEL_GEN_VALUE_COLUMNS = ("ts", "fuel_code", "gen_mw", "interval_minutes")
 FUEL_GEN_CONFLICT_KEY = ("source", "ts", "fuel_code")
@@ -520,7 +520,7 @@ def hourly_gaps(timestamps: Iterable[datetime]) -> list[datetime]:
     EIA-930 omits an hour entirely when it has no row for the requested fuel, and
     ``pivot_table`` then drops that hour from the index, so a gap arrives as a
     shorter frame rather than as a NaN or an error
-    (docs/PLAN_EIA_OIL_GAS.md R4). Duplicates and unsorted input are tolerated.
+    (docs/archive/plans/PLAN_EIA_OIL_GAS.md R4). Duplicates and unsorted input are tolerated.
 
     Detects interior holes only. Truncation at either end is invisible here,
     because the series defines its own bounds; compare ``rows_built`` against the
@@ -628,7 +628,7 @@ class ISONELoadSource:
     5-minute granularity (``Native Load``). The hourly ISO-NE Web Services feed
     (``get_load_hourly``) is still blocked on credentials; when it lands, it can
     write into the same ``raw.system_load`` table with ``interval_minutes = 60``
-    (docs/PLAN_EIA_EXTRACTOR.md Phase A4).
+    (docs/archive/plans/PLAN_EIA_EXTRACTOR.md Phase A4).
     """
 
     def __init__(self, zone: str = "ISONE") -> None:
@@ -738,7 +738,7 @@ class EIAFuelSource:
     ``list_facets`` on the client: they pass the key as a URL query parameter.
 
     Two deliberate differences from ``EIAWindSource``, both explained in
-    docs/PLAN_EIA_OIL_GAS.md: ``version_provider`` is injectable, so this module's
+    docs/archive/plans/PLAN_EIA_OIL_GAS.md: ``version_provider`` is injectable, so this module's
     tests run with gridstatus absent (D6); and ``describe_query`` returns a single
     line, so ``write_rows_csv`` cannot split the provenance banner (D5).
     """

@@ -137,7 +137,7 @@ def test_capital_cost_constants_still_json_round_trip():
 
 
 # --------------------------------------------------------------------------- #
-# Sweep defaults (docs/PLAN_SCENARIO_SWEEP.md section 4.2)
+# Sweep defaults (docs/archive/plans/PLAN_SCENARIO_SWEEP.md section 4.2)
 # --------------------------------------------------------------------------- #
 
 

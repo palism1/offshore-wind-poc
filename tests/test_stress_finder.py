@@ -20,7 +20,7 @@ from owr.stress_finder import (
 
 def _retired_percentile_threshold(values: list[float], percentile: float) -> float:
     """A local copy of the hand-rolled formula this module retired in phase 2 of
-    docs/PLAN_PANDAS_ADOPTION.md. Kept here only as a reference for the migration
+    docs/archive/plans/PLAN_PANDAS_ADOPTION.md. Kept here only as a reference for the migration
     tests below.
     """
     ordered = sorted(values)

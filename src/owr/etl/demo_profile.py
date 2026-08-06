@@ -1,8 +1,9 @@
-"""Real-data bridge: interval readings -> day-profile CSV (docs/PLAN_REAL_DEMO_BRIDGE.md).
+"""Real-data bridge: interval readings -> day-profile CSV
+(docs/archive/plans/PLAN_REAL_DEMO_BRIDGE.md).
 
 Pure. No file access, no network, no database.
 
-This module is disposable. ``docs/PLAN_SCENARIO_PROFILE_FORMAT.md`` section b.3
+This module is disposable. ``docs/archive/plans/PLAN_SCENARIO_PROFILE_FORMAT.md`` section b.3
 makes ``ts`` and ``interval_minutes`` required columns of the day-profile format;
 when that redesign lands it supersedes this module and its planned
 ``hourly.py`` / ``profile_csv.py`` replacements. Retire this module in the same
@@ -26,11 +27,11 @@ series goes through ``hourly_loads_from_readings`` as well, because an EIA-930
 hourly wind row and an ISO-NE five-minute load row are the same shape of input: a
 timestamped megawatt value with a width. ``HourlyLoad.load_mwh`` therefore holds
 wind energy on that path. A parallel dataclass would need a parallel integrator in
-a module that ``docs/PLAN_SCENARIO_PROFILE_FORMAT.md`` already supersedes.
+a module that ``docs/archive/plans/PLAN_SCENARIO_PROFILE_FORMAT.md`` already supersedes.
 
 No ``wind_forecast_frac`` column is emitted, and none is derived. The rows are
 actual generation, and a fraction of capacity needs a wind nameplate capacity that
-this repository does not hold. See ``docs/PLAN_DEMO_PROFILE_WIND.md`` decision D1.
+this repository does not hold. See ``docs/archive/plans/PLAN_DEMO_PROFILE_WIND.md`` decision D1.
 """
 
 from __future__ import annotations
@@ -119,7 +120,7 @@ def percentile_ranks(
     The caller must pass the day total that the population itself holds, never a
     total recomputed from an hourly rollup: two summation orders over the same day
     differ by about 1e-9, enough to drop a day below its own population value and
-    cost it one rank step (measured 2026-08-05, docs/PLAN_REAL_DEMO_BRIDGE.md).
+    cost it one rank step (measured 2026-08-05, docs/archive/plans/PLAN_REAL_DEMO_BRIDGE.md).
     """
     if not population_mwh:
         raise ValueError("percentile_ranks: population_mwh is empty")

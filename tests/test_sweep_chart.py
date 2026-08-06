@@ -1,4 +1,4 @@
-"""Tests for src/owr/sweep_chart.py (docs/PLAN_SCENARIO_SWEEP.md section 6.2).
+"""Tests for src/owr/sweep_chart.py (docs/archive/plans/PLAN_SCENARIO_SWEEP.md section 6.2).
 
 Cases 1 to 3 need matplotlib installed (skipped without the ``viz`` extra).
 Cases 4 to 6 need no matplotlib: ``render_sweep_chart`` validates before it

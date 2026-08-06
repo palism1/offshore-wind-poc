@@ -111,4 +111,4 @@ short-term markets cycles often, and a strategic winter reserve does not.
 - StEnSea full-scale unit spec (20 MWh, 30 m, 600–800 m, η 0.80): https://www.iee.fraunhofer.de/en/topics/stensea.html
 - HVDC submarine losses and converter station losses: https://publications.jrc.ec.europa.eu/repository/bitstream/JRC97720/ld-na-27527-en-n.pdf
 - HVDC cable and converter capital costs: https://neomarketdata.com/costs-of-hvdc-submarine-cables
-- Event pricing ($443/MWh, Event 17, Jan 25–31 2026): `docs/FINDINGS_REVIEW_2026-07-24.md`
+- Event pricing ($443/MWh, Event 17, Jan 25–31 2026): `docs/archive/reviews/FINDINGS_REVIEW_2026-07-24.md`

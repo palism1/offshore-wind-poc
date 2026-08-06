@@ -1,5 +1,5 @@
 """Tests for the EIA-930 oil and gas hourly generation extractor
-(docs/PLAN_EIA_OIL_GAS.md).
+(docs/archive/plans/PLAN_EIA_OIL_GAS.md).
 
 No gridstatus import except where a test explicitly needs the installed
 library's fuel-column constant (test 17): the provider boundary is a fake EIA

@@ -5,7 +5,7 @@
 -- Why a new table and not raw.hourly_wind: that table's primary key is
 -- (source, ts, horizon_days) and it carries no fuel column, so oil and gas rows
 -- collide under a shared source string, and a per-fuel source string would label
--- oil rows as wind. See docs/PLAN_EIA_OIL_GAS.md decision D1.
+-- oil rows as wind. See docs/archive/plans/PLAN_EIA_OIL_GAS.md decision D1.
 --
 -- Why interval_minutes is stored and not assumed: energy is
 -- gen_mw * interval_minutes / 60. See decision D3.

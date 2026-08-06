@@ -1,5 +1,5 @@
 """Tests for owr.initial_soc. No test module existed for this file before
-docs/PLAN_REVIEW_FIXES.md Phase 5; this creates the mirror the conventions ask for,
+docs/archive/plans/PLAN_REVIEW_FIXES.md Phase 5; this creates the mirror the conventions ask for,
 as Phase 1 does for models.py.
 """
 

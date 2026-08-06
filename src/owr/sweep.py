@@ -1,6 +1,6 @@
 """Pure sweep runner: one `simulator.simulate` call per storage size.
 
-Implements docs/PLAN_SCENARIO_SWEEP.md section 4.3. Engine core: no file access,
+Implements docs/archive/plans/PLAN_SCENARIO_SWEEP.md section 4.3. Engine core: no file access,
 no network access, no database access. Third-party imports are ``pandas`` only,
 per the engine-core two-library allowlist (pandas, numpy).
 

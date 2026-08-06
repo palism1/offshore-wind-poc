@@ -22,10 +22,10 @@ synced 2026-08-06T22:00:00.000Z
 ## Done
 
 - [Merge the reserve-split branch to main - Mikko](https://discord.com/channels/1527018571912446132/1527869913895669934) [Software] — Owner: _unassigned_
-- [Adopt pandas/numpy at the four DataFrame boundaries — Mikko](docs/PLAN_PANDAS_ADOPTION.md) [Software] — Owner: Mikko — 2026-08-05, 360 passed / 3 skipped, ruff clean
-- [Implement metrics.py toward Architecture Component 7 — Mikko](docs/PLAN_METRICS_COMPONENT7.md) [Software] — Owner: Mikko — 2026-08-05, 459 passed / 3 skipped, ruff clean
-- [Add the EIA-930 oil and gas hourly generation extractor — Mikko](docs/PLAN_EIA_OIL_GAS.md) [Software] — Owner: Mikko — 2026-08-05, 505 passed / 4 skipped, ruff clean
-- [Build the scenario sweep chart (`sweep` CLI) — Mikko](docs/PLAN_SCENARIO_SWEEP.md) [Software] — Owner: Mikko — 2026-08-05, 552 passed / 4 skipped with the `viz` extra (548 passed / 8 skipped without it), ruff clean
-- [Sync the code to the 2026-08-05 Architecture export — Mikko](docs/PLAN_ARCH_0805_SYNC.md) [Software] — Owner: Mikko — 2026-08-05, 572 passed / 4 skipped, ruff clean
+- [Adopt pandas/numpy at the four DataFrame boundaries — Mikko](docs/archive/plans/PLAN_PANDAS_ADOPTION.md) [Software] — Owner: Mikko — 2026-08-05, 360 passed / 3 skipped, ruff clean
+- [Implement metrics.py toward Architecture Component 7 — Mikko](docs/archive/plans/PLAN_METRICS_COMPONENT7.md) [Software] — Owner: Mikko — 2026-08-05, 459 passed / 3 skipped, ruff clean
+- [Add the EIA-930 oil and gas hourly generation extractor — Mikko](docs/archive/plans/PLAN_EIA_OIL_GAS.md) [Software] — Owner: Mikko — 2026-08-05, 505 passed / 4 skipped, ruff clean
+- [Build the scenario sweep chart (`sweep` CLI) — Mikko](docs/archive/plans/PLAN_SCENARIO_SWEEP.md) [Software] — Owner: Mikko — 2026-08-05, 552 passed / 4 skipped with the `viz` extra (548 passed / 8 skipped without it), ruff clean
+- [Sync the code to the 2026-08-05 Architecture export — Mikko](docs/archive/plans/PLAN_ARCH_0805_SYNC.md) [Software] — Owner: Mikko — 2026-08-05, 572 passed / 4 skipped, ruff clean
 - [Build ETL transform, daily aggregation and denominators — Mikko](https://discord.com/channels/1527018571912446132/1527871203434299665) [Validation, Software] — Owner: kKomi — 2026-08-05, `src/owr/etl/transform.py` and `tests/test_etl_transform.py` both ship
-- [Fix review findings F1 to F8 (efficiency semantics, discharge floor, net-load accounting, reserve validation, charging rule, annotation wording) — Mikko](docs/PLAN_REVIEW_FIXES.md) [Software] — Owner: Mikko — 2026-08-06, 622 passed / 4 skipped, ruff clean
+- [Fix review findings F1 to F8 (efficiency semantics, discharge floor, net-load accounting, reserve validation, charging rule, annotation wording) — Mikko](docs/archive/plans/PLAN_REVIEW_FIXES.md) [Software] — Owner: Mikko — 2026-08-06, 622 passed / 4 skipped, ruff clean

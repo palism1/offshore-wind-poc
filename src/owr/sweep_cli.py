@@ -2,7 +2,7 @@
 
 Runs the engine once per storage size on a ladder and prints the resulting curve:
 severity reduction and energy discharged against storage size. Implements
-docs/PLAN_SCENARIO_SWEEP.md section 4.5.
+docs/archive/plans/PLAN_SCENARIO_SWEEP.md section 4.5.
 
 A second console script rather than a subcommand on ``simulate`` (plan decision
 D1): it touches zero lines of ``cli.py`` and keeps the demo path there untouched.
@@ -46,17 +46,17 @@ _OPEN_QUESTIONS_STATIC = {
             "reference points and adds no physical assumption. The two curves "
             "differ in shape and not only in scale."
         ),
-        "handoff_ref": "docs/PLAN_SCENARIO_SWEEP.md section 9",
+        "handoff_ref": "docs/archive/plans/PLAN_SCENARIO_SWEEP.md section 9",
     },
     "sweep_size_ladder": {
         "flags": ["--sizes-mwh"],
         "note": (
             "The default seven sizes bracket Report A's 40,000 to 60,000 MWh "
-            "system reserve target. docs/FACT_CHECK_REPORT.md records that this "
+            "system reserve target. docs/archive/reviews/FACT_CHECK_REPORT.md records that this "
             "target does not reproduce from Report A's own inputs, so the ladder "
             "moves when that number moves."
         ),
-        "handoff_ref": "docs/PLAN_SCENARIO_SWEEP.md section 9",
+        "handoff_ref": "docs/archive/plans/PLAN_SCENARIO_SWEEP.md section 9",
     },
 }
 

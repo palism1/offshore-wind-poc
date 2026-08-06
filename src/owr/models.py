@@ -74,7 +74,7 @@ class StorageAsset:
         square root of the round-trip figure for the two legs to multiply back to
         it: ``sqrt(eff) * sqrt(eff) == eff``. The symmetric split (pump and
         turbine equally efficient) is the modeling convention recorded in
-        `docs/FINDINGS_STENSEA_PAPER_2026-08-02.md` section 3, adopted here in the
+        `docs/archive/reviews/FINDINGS_STENSEA_PAPER_2026-08-02.md` section 3, adopted here in the
         engine itself. `storage_physics.one_way_from_round_trip` is the same
         formula; `models` does not import it because `models` is the lowest layer
         in the package and takes no intra-package import.
@@ -124,7 +124,7 @@ class StressWindow:
     (hour), ``last_hour_index`` (hour), ``peak_hourly_load`` ("MW?") and
     ``load_percentile_threshold`` (Percentile). The readings below are documented
     choices, not sourced facts. OPEN team question (stress_window_output_fields):
-    see docs/PLAN_ARCH_0805_SYNC.md decisions D4 to D7.
+    see docs/archive/plans/PLAN_ARCH_0805_SYNC.md decisions D4 to D7.
 
     start / end / days
         Inclusive calendar bounds and the day count. These carry the source's
@@ -174,7 +174,7 @@ class StressWindow:
         The index is event-local. An absolute index would need an origin for the
         hour axis, and no detection path has a stable one: the ETL path allows
         gaps, and the simulator CLI path would count from whichever file the
-        operator passed. See docs/PLAN_ARCH_0805_SYNC.md decision D4, which also
+        operator passed. See docs/archive/plans/PLAN_ARCH_0805_SYNC.md decision D4, which also
         records the mixed source evidence.
         """
         return 0
@@ -244,7 +244,7 @@ class WrapConvention(StrEnum):
 
 class PowerRule(StrEnum):
     """How a sweep sets storage power at each energy size. OPEN team question
-    (sweep_power_scaling): see docs/PLAN_SCENARIO_SWEEP.md section 3, decision D2.
+    (sweep_power_scaling): see docs/archive/plans/PLAN_SCENARIO_SWEEP.md section 3, decision D2.
 
     ``StrEnum``, not a plain ``Enum``, for the same reason ``WrapConvention`` is one:
     ``Config`` carries it and ``cli.py`` does ``json.dumps(asdict(cfg))``.

@@ -1,4 +1,4 @@
-"""Tests for threshold/window orchestration (docs/PLAN_EIA_EXTRACTOR.md Phase B3)."""
+"""Tests for threshold/window orchestration (docs/archive/plans/PLAN_EIA_EXTRACTOR.md Phase B3)."""
 
 from __future__ import annotations
 
@@ -126,7 +126,7 @@ def test_dailyload_accepted_by_find_stress_windows_at_threshold():
 
 def test_etl_path_leaves_severity_percentile_none():
     # Pins the split between the StressWindow object and the ETL event frame
-    # (docs/PLAN_ARCH_0805_SYNC.md decision D9): find_windows_per_winter calls
+    # (docs/archive/plans/PLAN_ARCH_0805_SYNC.md decision D9): find_windows_per_winter calls
     # find_stress_windows_at_threshold exactly as below, with no percentile named,
     # so severity_percentile stays None on the object even though threshold_mwh is
     # set. peak_hourly_load_mw is never enriched on the ETL path either.

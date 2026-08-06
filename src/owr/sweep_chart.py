@@ -1,4 +1,4 @@
-"""Matplotlib rendering of a sweep frame. Implements docs/PLAN_SCENARIO_SWEEP.md
+"""Matplotlib rendering of a sweep frame. Implements docs/archive/plans/PLAN_SCENARIO_SWEEP.md
 section 4.4.
 
 CLI layer, not engine core: Matplotlib is an optional dependency (the ``viz``

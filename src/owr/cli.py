@@ -43,7 +43,7 @@ from owr.stress_finder import find_stress_windows, with_peak_hourly_load
 from owr.version import code_version
 
 # Reporting-only assumption: no engine function takes it, so it is not a Config
-# field (see docs/PLAN_SIMULATOR_CLI.md section 4, "Where each default lives").
+# field (see docs/archive/plans/PLAN_SIMULATOR_CLI.md section 4, "Where each default lives").
 # OPEN team question (cycles_per_year): identified 2026-07-28 as the variable the
 # storage siting trade-off turns on and left unspecified. At ~10 cycles/yr capex
 # dominates; at ~200 the efficiency case returns.
@@ -87,7 +87,7 @@ _OPEN_QUESTIONS_STATIC = {
             "load_percentile_threshold travels as both the percentile and the "
             "MWh cut value, because the unit cell and the field name disagree."
         ),
-        "handoff_ref": "docs/PLAN_ARCH_0805_SYNC.md decisions D4 to D7",
+        "handoff_ref": "docs/archive/plans/PLAN_ARCH_0805_SYNC.md decisions D4 to D7",
     },
     "reserve_usage_rules": {
         "flags": ["--soc-floor-frac", "--strategic-reserve-frac"],
@@ -116,7 +116,7 @@ _OPEN_QUESTIONS_STATIC = {
             "clamps. A forward-looking forecast reading is possible and would "
             "measure forecast error instead."
         ),
-        "handoff_ref": "docs/PLAN_METRICS_COMPONENT7.md open questions",
+        "handoff_ref": "docs/archive/plans/PLAN_METRICS_COMPONENT7.md open questions",
     },
     "recharge_capacity_denominator": {
         "flags": [],
@@ -126,19 +126,19 @@ _OPEN_QUESTIONS_STATIC = {
             "Available Charge band. The alternative, full total_mwh, differs by "
             "about 1.43x."
         ),
-        "handoff_ref": "docs/PLAN_METRICS_COMPONENT7.md open questions",
+        "handoff_ref": "docs/archive/plans/PLAN_METRICS_COMPONENT7.md open questions",
     },
     "wind_charge_source": {
         "flags": [],
         "note": (
-            "F5, docs/PLAN_REVIEW_FIXES.md: pre-event and in-window charging both "
+            "F5, docs/archive/plans/PLAN_REVIEW_FIXES.md: pre-event and in-window charging both "
             "take surplus wind above the hour's load, so the rule cannot tell an "
             "ISO-NE system-wide wind series (which serves load and is almost "
             "never surplus) from a dedicated offshore farm whose output would go "
             "to the reserve first. The shipped profiles carry system-wide wind, "
             "so this rule returns the starting SoC unchanged on both."
         ),
-        "handoff_ref": "docs/PLAN_REVIEW_FIXES.md Phase 5",
+        "handoff_ref": "docs/archive/plans/PLAN_REVIEW_FIXES.md Phase 5",
     },
 }
 
@@ -500,7 +500,7 @@ def _build_report(
     # One simulate() call is one span. Under --window N the span is one detected
     # stress window; under --window all it is every file day after the lead days,
     # so this total covers non-stress days too. The key name says "span" for that
-    # reason; see docs/PLAN_METRICS_COMPONENT7.md section 5.2.
+    # reason; see docs/archive/plans/PLAN_METRICS_COMPONENT7.md section 5.2.
     opportunity: list[float] = []
     actual: list[float] = []
     for day_profile, day_result in zip(span, result.daily, strict=True):

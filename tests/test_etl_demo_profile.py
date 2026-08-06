@@ -1,4 +1,4 @@
-"""Tests for the real-data bridge (docs/PLAN_REAL_DEMO_BRIDGE.md Phase 1)."""
+"""Tests for the real-data bridge (docs/archive/plans/PLAN_REAL_DEMO_BRIDGE.md Phase 1)."""
 
 from __future__ import annotations
 

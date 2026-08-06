@@ -1,4 +1,4 @@
-"""Season tagging and winter labelling (docs/PLAN_EIA_EXTRACTOR.md Phase B2).
+"""Season tagging and winter labelling (docs/archive/plans/PLAN_EIA_EXTRACTOR.md Phase B2).
 
 Settled definitions (HANDOFF.md): winter = Dec 1 - Feb 28/29, summer = Jun 1 -
 Sep 30. Both land exactly on month boundaries, so no day-of-month logic is

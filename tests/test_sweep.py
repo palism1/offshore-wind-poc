@@ -1,4 +1,4 @@
-"""Tests for src/owr/sweep.py (docs/PLAN_SCENARIO_SWEEP.md section 6.1)."""
+"""Tests for src/owr/sweep.py (docs/archive/plans/PLAN_SCENARIO_SWEEP.md section 6.1)."""
 
 from __future__ import annotations
 

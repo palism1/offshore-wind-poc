@@ -1,4 +1,4 @@
-"""Tests for src/owr/sweep_cli.py (docs/PLAN_SCENARIO_SWEEP.md section 6.3).
+"""Tests for src/owr/sweep_cli.py (docs/archive/plans/PLAN_SCENARIO_SWEEP.md section 6.3).
 
 Cases 1 to 13 land in phase 2; cases 14 and 15 land in phase 3.
 """

@@ -46,7 +46,7 @@ class SimulationResult:
         """The Component 6 hourly result table, one row per simulated hour.
 
         ``date`` stays an ``object`` column of ``datetime.date``, never ``datetime64``
-        (see docs/PLAN_PANDAS_ADOPTION.md risk 3). ``capacity_margin`` is always
+        (see docs/archive/plans/PLAN_PANDAS_ADOPTION.md risk 3). ``capacity_margin`` is always
         ``float64``, ``NaN`` when the caller passed no ``available_capacity_mw``
         (measurement M16: an all-``None`` column must be built with an explicit
         dtype, or it silently infers ``object``).

@@ -1,4 +1,4 @@
-"""Tests for `etl demo-profile` CLI wiring (docs/PLAN_REAL_DEMO_BRIDGE.md Phase 2).
+"""Tests for `etl demo-profile` CLI wiring (docs/archive/plans/PLAN_REAL_DEMO_BRIDGE.md Phase 2).
 
 The computation modules (owr.etl.daily, owr.etl.demo_profile) are tested elsewhere;
 this module only exercises the CLI's argument parsing, file handling, and error

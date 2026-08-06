@@ -1,4 +1,4 @@
-"""Tests for the EIA-930 wind extractor (docs/PLAN_EIA_EXTRACTOR.md Phase A2).
+"""Tests for the EIA-930 wind extractor (docs/archive/plans/PLAN_EIA_EXTRACTOR.md Phase A2).
 
 No gridstatus import: the provider boundary is a fake EIA client
 (``FakeEIAClient``) and a fake frame (``FakeFrame``), so everything here runs

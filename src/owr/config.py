@@ -1,7 +1,7 @@
 """Engine configuration — the design constants the source documents leave open.
 
 Every value here is a **team design choice**, not a verified fact (see
-docs/FACT_CHECK_REPORT.md "Common Mistakes": the 0.7/0.3 weights, 80% budget and
+docs/archive/reviews/FACT_CHECK_REPORT.md "Common Mistakes": the 0.7/0.3 weights, 80% budget and
 33% floor are decisions to benchmark against literature and label, never facts to
 verify). They are surfaced as configuration so a scenario can override them and so
 the open questions in docs/PLAN.md never get hard-coded as magic numbers.
@@ -46,7 +46,7 @@ class Config:
         splits it symmetrically: each leg carries ``sqrt(eff)``
         (`StorageAsset.one_way_efficiency`), so the two legs multiply back to this
         round-trip figure. Enter a round-trip figure directly, never pre-squared:
-        Dick et al. Table 1 (`docs/FINDINGS_STENSEA_PAPER_2026-08-02.md`) gives 0.72
+        Dick et al. Table 1 (`docs/archive/reviews/FINDINGS_STENSEA_PAPER_2026-08-02.md`) gives 0.72
         full cycle for StEnSea, and ``--efficiency 0.72`` realizes exactly that.
         Defaults to 1.0, which reconciles the Overview's "100% efficient" assumption
         with the Architecture doc's efficiency term (FACT_CHECK inconsistency #2),
@@ -128,16 +128,16 @@ class Config:
     default_sweep_sizes_mwh
         OPEN team question (``sweep_size_ladder``). The seven sizes bracket Report
         A's 40,000 to 60,000 MWh system reserve target and the 60,000 MWh demo
-        point. ``docs/FACT_CHECK_REPORT.md`` records that the 40,000 to 60,000 MWh
+        point. ``docs/archive/reviews/FACT_CHECK_REPORT.md`` records that the 40,000 to 60,000 MWh
         target does not reproduce from its own inputs, so the ladder moves when
         that number moves. Read at parser-build time by
         ``sweep_cli.build_parser``; no engine function reads it at run time. See
-        docs/PLAN_SCENARIO_SWEEP.md decision D3.
+        docs/archive/plans/PLAN_SCENARIO_SWEEP.md decision D3.
 
     default_sweep_power_rule
         OPEN team question (``sweep_power_scaling``). Fixed power isolates the
         energy variable and reproduces the recorded reference points. Fixed
-        duration is the fleet-scaled reading. See docs/PLAN_SCENARIO_SWEEP.md
+        duration is the fleet-scaled reading. See docs/archive/plans/PLAN_SCENARIO_SWEEP.md
         decision D2. Read at parser-build time only, as above.
     """
 

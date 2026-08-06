@@ -1,4 +1,4 @@
-"""Tests for the extract-rows CSV round trip (docs/PLAN_EIA_EXTRACTOR.md Phase A3)."""
+"""Tests for the extract-rows CSV round trip (docs/archive/plans/PLAN_EIA_EXTRACTOR.md Phase A3)."""
 
 from __future__ import annotations
 

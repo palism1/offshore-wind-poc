@@ -1,4 +1,4 @@
-"""Interval readings -> daily energy, correctly (docs/PLAN_EIA_EXTRACTOR.md Phase B2).
+"""Interval readings -> daily energy, correctly (docs/archive/plans/PLAN_EIA_EXTRACTOR.md Phase B2).
 
 Pure; no file, network or database access. Uses stdlib ``zoneinfo`` and ``pandas``.
 

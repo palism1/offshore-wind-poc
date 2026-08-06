@@ -46,7 +46,7 @@ Component 3, and the output says so on its source line.
 
 Real ISO-NE load and real EIA-930 hourly wind, the 11-day stress event
 2026-01-24 to 2026-02-03 (the event Report B priced at $443/MWh). The reserve
-starts fully charged: `docs/PLAN_REVIEW_FIXES.md` F5 fix makes pre-event
+starts fully charged: `docs/archive/plans/PLAN_REVIEW_FIXES.md` F5 fix makes pre-event
 charging take only wind above the hour's load, and ISO-NE system-wide wind
 almost never exceeds system load, so a `--start-soc-mwh 20000` run now shows
 almost no gain (severity reduction rounds to 0.0%). This full-charge command

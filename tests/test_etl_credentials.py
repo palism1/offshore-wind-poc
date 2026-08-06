@@ -1,4 +1,4 @@
-"""Tests for EIA credential handling (docs/PLAN_EIA_EXTRACTOR.md Phase A1).
+"""Tests for EIA credential handling (docs/archive/plans/PLAN_EIA_EXTRACTOR.md Phase A1).
 
 The key must never be interpolated into an error message or returned by
 ``require_eia_api_key``; ``redact_secrets`` is defence in depth only.

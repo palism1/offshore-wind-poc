@@ -1,4 +1,4 @@
-"""Tests for season tagging (docs/PLAN_EIA_EXTRACTOR.md Phase B2)."""
+"""Tests for season tagging (docs/archive/plans/PLAN_EIA_EXTRACTOR.md Phase B2)."""
 
 from __future__ import annotations
 

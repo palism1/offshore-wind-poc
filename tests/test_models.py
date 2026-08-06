@@ -1,5 +1,5 @@
 """Tests for owr.models. No test module existed for this file before
-docs/PLAN_REVIEW_FIXES.md Phase 1; this creates the mirror the conventions ask for.
+docs/archive/plans/PLAN_REVIEW_FIXES.md Phase 1; this creates the mirror the conventions ask for.
 """
 
 import math

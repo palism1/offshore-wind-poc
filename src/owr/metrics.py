@@ -9,7 +9,7 @@ The 2026-08-04 export of
 ``docs/source/2026-08-04_Software_Architecture_Documentation.md`` fills Step 6 in
 as **Component 7, Scenario Metrics Engine**. The functions below the four original
 ones implement the well-defined part of that component, per
-``docs/PLAN_METRICS_COMPONENT7.md``. Field map, Component 7 contract field to
+``docs/archive/plans/PLAN_METRICS_COMPONENT7.md``. Field map, Component 7 contract field to
 function:
 
 | Function | Component 7 contract field | Unit of the field |
@@ -45,13 +45,13 @@ block uses):
    ``total_generation(t)``.
 5. ``stress_window_effectiveness_numerator``. Not implemented. Does
    ``charge_dispatched(t)`` mean the charge leg or the discharge leg? See
-   ``docs/PLAN_METRICS_COMPONENT7.md`` section 1.
+   ``docs/archive/plans/PLAN_METRICS_COMPONENT7.md`` section 1.
 6. ``capital_cost_constants``. No source value exists for
    ``est_transmission_cost_per_mile``, ``est_storage_unit_cost`` or
    ``solution_lifetime``; see ``config.py``.
 
 Conventions applying to every Component 7 function below (full detail in
-``docs/PLAN_METRICS_COMPONENT7.md`` section 2):
+``docs/archive/plans/PLAN_METRICS_COMPONENT7.md`` section 2):
 
 - Inputs are ``collections.abc.Sequence[float]``; no pandas, no numpy.
 - Every function with two or more same-unit arguments makes them keyword-only.
@@ -94,7 +94,7 @@ def net_load(gross_load_mw: float, discharge_mw: float, charge_mw: float = 0.0) 
     """Load the grid must serve after the reserve acts: gross - discharge + charge.
 
     ``charge_mw`` is charge drawn **from the grid**. ``simulator.simulate`` charges
-    only from surplus wind (D2, `docs/PLAN_REVIEW_FIXES.md`) and therefore passes no
+    only from surplus wind (D2, `docs/archive/plans/PLAN_REVIEW_FIXES.md`) and therefore passes no
     grid charge here, so its ``net_load`` column is ``gross - discharge``. This
     reconciles the two modules without a formula change: this function's signature,
     formula and default stay exactly as they were.
@@ -363,7 +363,7 @@ def capacity_margin_deficit_reduction_mw(
     loads reaches the same number.
 
     OPEN team question ``capacity_margin_metric_definition`` (module docstring),
-    citing ``docs/FINDINGS_SOURCE_DOCS_2026-08-05.md`` section 3: Component 7
+    citing ``docs/archive/reviews/FINDINGS_SOURCE_DOCS_2026-08-05.md`` section 3: Component 7
     carries two formulas under one "Capacity Margin Deficit Reduction" heading, in
     different units. This function implements the per-hour MW formula;
     ``net_load_change_percent`` implements the other, the legacy percentage-change
@@ -413,7 +413,7 @@ def net_load_change_percent(
     definition names. Only the sum of the observed series is checked.
 
     OPEN team question ``capacity_margin_metric_definition`` (module docstring),
-    citing ``docs/FINDINGS_SOURCE_DOCS_2026-08-05.md`` section 3: this function
+    citing ``docs/archive/reviews/FINDINGS_SOURCE_DOCS_2026-08-05.md`` section 3: this function
     implements the legacy percentage-change formula;
     ``capacity_margin_deficit_reduction_mw`` implements the per-hour MW formula
     under the same Component 7 heading. The Overview still labels this formula

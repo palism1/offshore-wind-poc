@@ -1,4 +1,5 @@
-"""Tests for interval-to-daily energy integration (docs/PLAN_EIA_EXTRACTOR.md Phase B2)."""
+"""Tests for interval-to-daily energy integration
+(docs/archive/plans/PLAN_EIA_EXTRACTOR.md Phase B2)."""
 
 from __future__ import annotations
 
