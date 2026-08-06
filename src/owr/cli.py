@@ -766,6 +766,10 @@ def _render_table(report: dict, args: argparse.Namespace, out: TextIO) -> None:
         out.write("  demand percentile    derived from series rank (column absent)\n")
     else:
         out.write("  demand percentile    read from file\n")
+    if inp["has_wind"]:
+        out.write("  wind_mw              present (hourly series, from file)\n")
+    else:
+        out.write("  wind_mw              absent (column not in file)\n")
     if inp["wind_forecast_frac_source"] == "default-zero":
         out.write("  wind forecast frac   defaulted to 0.000 (column absent)\n")
     else:
