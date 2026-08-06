@@ -35,7 +35,8 @@ api = [
 ]
 viz = [
     # Chart rendering for the sweep CLI (src/owr/sweep_chart.py) only. The engine
-    # core never imports it; see CLAUDE.md engine-core purity rule.
+    # core never imports it; the core allows only pandas and numpy as third-party
+    # dependencies.
     "matplotlib>=3.9",
 ]
 

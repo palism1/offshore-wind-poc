@@ -222,7 +222,7 @@ narrowed open question replaces the old note text.
 | `db/migrations/001_init.sql` | Line 106 trailing comment. |
 | `tests/test_config.py` | One docstring update. |
 | `tests/test_cli.py` | Three new tests. |
-| `CLAUDE.md` | The `config.py` row. |
+| the repo map | The `config.py` row. |
 | `docs/PLAN_SIMULATOR_CLI.md` | One line appended to the existing supersession note. |
 
 ### 1.1 `src/owr/config.py`, module docstring
@@ -377,7 +377,7 @@ Must still pass unchanged:
 
 ### 1.10 Docs, Phase 1
 
-`CLAUDE.md`, the `src/owr/config.py` row. Replace the last sentence
+the repo map, the `src/owr/config.py` row. Replace the last sentence
 "Every value is a team choice, not a sourced fact." with:
 "Every value is a team choice, not a sourced fact, except
 `default_severity_percentile`, sourced 2026-08-05."
@@ -1091,11 +1091,11 @@ Suggested message: `Change B phase 3: stress-window fields in the API and the st
 
 No code change, no test change.
 
-1. `CLAUDE.md`, the `src/owr/stress_finder.py` row. Replace the cell with:
+1. the repo map, the `src/owr/stress_finder.py` row. Replace the cell with:
    "Finds runs of N consecutive days above a demand percentile. Also stamps the
    Component 3 output fields, and fills the hourly peak through
    `with_peak_hourly_load`."
-2. `CLAUDE.md`, the `src/owr/models.py` row. Append: "`StressWindow` carries the
+2. the repo map, the `src/owr/models.py` row. Append: "`StressWindow` carries the
    Component 3 event row."
 3. `docs/HANDOFF.md`, append a session entry: what landed in each phase, the test
    counts, and the two open questions the run now carries

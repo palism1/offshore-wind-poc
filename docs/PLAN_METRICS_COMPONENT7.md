@@ -687,7 +687,7 @@ After the suite is green, update three documents:
 - `docs/HANDOFF.md`: append the open questions from section 10 to the newest
   "Open questions and decisions not yet made" block, and record what shipped.
 - `docs/BOARD.md`: add a Done row in the format of the pandas row.
-- `CLAUDE.md`: no change. `metrics.py` keeps its row, "Outcome metrics".
+- the repo map: no change. `metrics.py` keeps its row, "Outcome metrics".
 
 ---
 

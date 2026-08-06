@@ -234,7 +234,7 @@ def test_run_sweep_passes_config_weights_through(monkeypatch):
 
 
 def test_purity_guard_no_matplotlib_or_cli_in_engine_core():
-    """Engine-core modules per CLAUDE.md must not *import* matplotlib,
+    """Engine-core modules must not *import* matplotlib,
     sweep_chart or owr.cli. Listed explicitly so a new core module has to be
     added on purpose. Checked against the parsed import statements, not a raw
     substring search: owr/version.py's docstring names ``owr.cli`` in prose

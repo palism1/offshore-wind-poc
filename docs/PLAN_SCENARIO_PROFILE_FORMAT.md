@@ -868,7 +868,7 @@ commit, and then reruns the full suite.
 | `src/owr/etl/__init__.py` | **No change.** Its `__all__` stays `["Provenance"]`. |
 | `tests/conftest.py` | **Does not exist. Do not create one.** |
 | `db/migrations/` | **No change.** No migration 004. |
-| `CLAUDE.md` | Add two rows to the ETL table: `hourly.py` \| `Interval readings to one average MW value per local hour. Pure, mirrors daily.py.` and `profile_csv.py` \| `Writes the hourly scenario profile CSV, banner plus rows. Mirrors rows_csv.py.` Change the `scenario_input.py` row to: `Hourly scenario profile CSV reader for the simulator CLI. 24 hour days only.` |
+| the repo map | Add two rows to the ETL table: `hourly.py` \| `Interval readings to one average MW value per local hour. Pure, mirrors daily.py.` and `profile_csv.py` \| `Writes the hourly scenario profile CSV, banner plus rows. Mirrors rows_csv.py.` Change the `scenario_input.py` row to: `Hourly scenario profile CSV reader for the simulator CLI. 24 hour days only.` |
 | `README.md` lines 76 to 81 | Replace the "provisional" paragraph. The format is now defined once and written by `etl transform --profile-out`. Name the required columns and the average MW unit. |
 | `docs/HANDOFF.md` line 43 | Re-baseline the byte identical row. The command does not change. Record the new line count and the date of the re-baseline. |
 | `docs/DATA_SOURCES.md` | Add a section for the profile format: the column list, the average MW unit, the fraction unit for `demand_percentile` and `wind_forecast_frac` against Component 2's `%`, the two upstream sources (`gridstatus.isone.load` and `eia930.isne.wind`), the `demand_percentile` definition with a pointer to `percentile_rank_within`, and the note that `wind_forecast_frac` is never written. |

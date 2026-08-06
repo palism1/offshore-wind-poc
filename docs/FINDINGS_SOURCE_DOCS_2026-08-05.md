@@ -135,7 +135,7 @@ Current repository state against that list:
 
 ### The conflict to settle before any pandas work starts
 
-`CLAUDE.md` states: "Engine core stays pure. No I/O, no DB imports below the CLI and API
+the repo map states: "Engine core stays pure. No I/O, no DB imports below the CLI and API
 layers." `pyproject.toml` states the engine is "intentionally pure-Python with no
 third-party runtime deps so it stays fully testable offline". A pandas rewrite of the engine
 core contradicts both.

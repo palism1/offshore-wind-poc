@@ -106,7 +106,7 @@ labeled module constant instead.
 `sweep.py` takes `DayProfile` objects and numbers, calls `simulator.simulate` and
 `metrics`, and returns dataclasses plus a `pandas.DataFrame`. It does no file access, no
 network access and no database access. Its third-party imports are `pandas` only. It
-qualifies under the two-library allowlist in `CLAUDE.md`.
+qualifies under the two-library allowlist in the repo map.
 
 `sweep_chart.py` imports Matplotlib inside the render function, not at module scope. Two
 consequences. `sweep_cli.py` imports `sweep_chart` unconditionally and costs nothing when
@@ -460,7 +460,7 @@ length. Legibility is a judgement call and no test covers it.
 
 ### Phase 4 — documentation and the demo run (about 30 minutes)
 
-1. `CLAUDE.md`: add `uv run sweep --help` to the Commands block. Add a `src/owr/sweep.py`
+1. the repo map: add `uv run sweep --help` to the Commands block. Add a `src/owr/sweep.py`
    row to the engine-core table. Add a new two-row table under the ETL table, headed
    **Sweep chart** (`src/owr/sweep_cli.py`, `src/owr/sweep_chart.py`), noting that
    Matplotlib is the `viz` extra and never enters the engine core.
@@ -521,7 +521,7 @@ Expected suite totals, from the 505 passed / 4 skipped baseline:
     return the same `reserve_peak_mw` (9,000.0 MW) and the same discharged energy
     (12,768.0 MWh) on `examples/synthetic_winter_stress.csv`, so an output-level assertion
     would fail while the code is correct.
-19. **Purity guard.** Read the source of each engine-core module named in `CLAUDE.md` and
+19. **Purity guard.** Read the source of each engine-core module named in the repo map and
     assert that none contains `matplotlib`, `sweep_chart` or `owr.cli`. List the module
     paths in the test so a new core module has to be added on purpose.
 20. `run_sweep` raises `ValueError` when every load value is zero, the documented D6

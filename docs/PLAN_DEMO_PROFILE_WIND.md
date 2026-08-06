@@ -642,7 +642,7 @@ Change nothing else in `cli.py`. No new flag, no engine call, no JSON key:
    - The retirement list for `docs/PLAN_SCENARIO_PROFILE_FORMAT.md` grows: that
      redesign must now carry the `wind_mw` column of
      `examples/real_winter_stress_2026.csv` as well as the load column.
-4. `CLAUDE.md`: no change. The `demo_profile.py` row still describes the module
+4. the repo map: no change. The `demo_profile.py` row still describes the module
    correctly, and the new plan document is already covered by the `docs/PLAN_*.md`
    row.
 5. `docs/BOARD.md`: no change. It is a synced job board, not a place for this state.

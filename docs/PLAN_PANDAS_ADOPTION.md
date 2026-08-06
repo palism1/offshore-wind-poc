@@ -149,7 +149,7 @@ free of file access, network access, database access and provider code, so it re
 testable offline before any ISO-NE or EIA (Energy Information Administration) credential
 exists.
 
-**`CLAUDE.md`.** Replace the first Conventions bullet with:
+**the repo map.** Replace the first Conventions bullet with:
 
 ```
 - Engine core stays pure: no file or network access, and no database. Third-party

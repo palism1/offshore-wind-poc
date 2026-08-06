@@ -727,7 +727,7 @@ mandatory substitute.
    - A NaN in the requested fuel column means the pivot produced no such column, which is the
      signature of a renamed fuel upstream. The adapter raises on it.
 
-3. `CLAUDE.md`: no change. No new module lands, and `db/migrations/` is already mapped.
+3. the repo map: no change. No new module lands, and `db/migrations/` is already mapped.
 
 4. `docs/BOARD.md`: add a Done row with the date, the pytest counts, and the ruff result.
 

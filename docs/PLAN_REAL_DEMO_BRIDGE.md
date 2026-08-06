@@ -380,7 +380,7 @@ number.
 
 ## Phase 4 — documents
 
-1. `CLAUDE.md`: add a row to the ETL table for `demo_profile.py`. One line, matching
+1. the repo map: add a row to the ETL table for `demo_profile.py`. One line, matching
    the style of its neighbours, and naming the module as a bridge.
 2. `README.md`: add the real-data command under Quickstart, beside the synthetic
    one. Add one sentence in the `examples/` layout note that names the file, names
