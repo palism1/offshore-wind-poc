@@ -87,6 +87,83 @@ def test_soc_never_crosses_the_floor_at_lossy_efficiency(efficiency):
     assert result.final_soc >= asset.min_soc_mwh - 1e-6
 
 
+def _surplus_wind_day() -> DayProfile:
+    # Flat 100 MW load, one hour bumped to 300 MW so a real discharge leg exists
+    # (a flat day dispatches nothing, the known flat-day edge). Wind is 0 except
+    # 500 MW at hour 12, well above that hour's load, so it is surplus.
+    load = [100.0] * 24
+    load[18] = 300.0
+    wind = [0.0] * 24
+    wind[12] = 500.0
+    return DayProfile(
+        date=date(2026, 1, 10),
+        hourly_load_mw=tuple(load),
+        hourly_wind_mw=tuple(wind),
+        demand_percentile=0.95,
+        wind_forecast_frac=0.5,
+    )
+
+
+def _surplus_wind_asset() -> StorageAsset:
+    return StorageAsset(
+        total_mwh=10000,
+        power_mw=500,
+        efficiency=1.0,
+        soc_floor_frac=0.20,
+        strategic_reserve_frac=0.10,
+    )
+
+
+def test_surplus_wind_charging_does_not_raise_the_reserve_peak():
+    # F3/F7b, the reviewer's own repro (with a load bump added so a discharge leg
+    # is real). Before D2, hour 12's net load included the charging draw and
+    # reported near 500 MW against a 300 MW baseline peak: a negative severity
+    # reduction despite storage strictly helping.
+    asset = _surplus_wind_asset()
+    result = simulate(
+        asset,
+        [_surplus_wind_day()],
+        starting_soc=5000.0,  # above the floor (3000) and below total_mwh
+    )
+    hourly_by_hour = {h.ts_hour: h for h in result.daily[0].hourly}
+
+    assert hourly_by_hour[12].charge > 0
+    assert hourly_by_hour[18].discharge > 0
+    assert result.baseline_peak_mw == 300.0
+    assert result.reserve_peak_mw <= result.baseline_peak_mw
+    assert hourly_by_hour[12].net_load == pytest.approx(
+        hourly_by_hour[12].gross_load - hourly_by_hour[12].discharge
+    )
+
+
+def test_reserve_peak_never_exceeds_baseline_peak():
+    # D2's provable floor: discharge >= 0, so reserve_peak_mw <= baseline_peak_mw
+    # always, on a surplus-wind profile and on the existing three-day stress window.
+    surplus_result = simulate(_surplus_wind_asset(), [_surplus_wind_day()], starting_soc=5000.0)
+    assert surplus_result.reserve_peak_mw <= surplus_result.baseline_peak_mw
+
+    stress_asset = StorageAsset(
+        total_mwh=20000, power_mw=2000, efficiency=1.0,
+        soc_floor_frac=0.33, strategic_reserve_frac=0.0,
+    )
+    stress_window = [_stress_day(i) for i in range(3)]
+    stress_result = simulate(
+        stress_asset, stress_window, starting_soc=stress_asset.total_mwh,
+        available_capacity_mw=13000.0,
+    )
+    assert stress_result.reserve_peak_mw <= stress_result.baseline_peak_mw
+
+
+def test_capacity_margin_follows_the_net_load_definition():
+    asset = _surplus_wind_asset()
+    result = simulate(
+        asset, [_surplus_wind_day()], starting_soc=5000.0, available_capacity_mw=1000.0
+    )
+    hour12 = next(h for h in result.daily[0].hourly if h.ts_hour == 12)
+    assert hour12.charge > 0
+    assert hour12.capacity_margin == pytest.approx(1000.0 - hour12.net_load)
+
+
 def test_initial_soc_charges_from_wind_before_event():
     asset = StorageAsset(
         total_mwh=1000,

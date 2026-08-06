@@ -91,7 +91,14 @@ def _require_same_length(a: Sequence[float], b: Sequence[float], name_a: str, na
 
 
 def net_load(gross_load_mw: float, discharge_mw: float, charge_mw: float = 0.0) -> float:
-    """Load the grid must serve after the reserve acts: gross - discharge + charge."""
+    """Load the grid must serve after the reserve acts: gross - discharge + charge.
+
+    ``charge_mw`` is charge drawn **from the grid**. ``simulator.simulate`` charges
+    only from surplus wind (D2, `docs/PLAN_REVIEW_FIXES.md`) and therefore passes no
+    grid charge here, so its ``net_load`` column is ``gross - discharge``. This
+    reconciles the two modules without a formula change: this function's signature,
+    formula and default stay exactly as they were.
+    """
     return gross_load_mw - discharge_mw + charge_mw
 
 

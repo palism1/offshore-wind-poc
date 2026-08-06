@@ -39,7 +39,8 @@ class SimulationResult:
     daily: list[DailyResult]
     final_soc: float
     baseline_peak_mw: float  # worst hour of gross load across the window (no storage)
-    reserve_peak_mw: float   # worst hour of net load across the window (with storage)
+    reserve_peak_mw: float   # worst hour of net load across the window (with storage);
+    # net load is gross load minus discharge (D2), so reserve_peak_mw <= baseline_peak_mw always
 
     def hourly_frame(self) -> pd.DataFrame:
         """The Component 6 hourly result table, one row per simulated hour.
@@ -67,6 +68,12 @@ class SimulationResult:
         ``recharge_opportunity``, ``dispatch_reason``, ``remaining_capacity``,
         ``observed_net_load``, ``oil_generation_actual``, ``gas_generation_actual``,
         ``wind_generation_actual``.
+
+        D2: ``net_load`` equals ``gross_load - discharge``. ``charge`` carries
+        surplus-wind charging and never enters ``net_load``, because surplus wind
+        is wind above the load the grid must serve, and the grid never supplies it.
+        So ``capacity_dispatched(t)`` equals ``discharge(t)`` and equals
+        ``gross_load - net_load`` for any later per-event metric (CMDR, SWE, FOP).
         """
         dates: list = []
         ts_hour: list = []
@@ -193,7 +200,12 @@ def simulate(
                 soc, charge=charge, discharge=0.0, one_way_efficiency=asset.one_way_efficiency
             )
 
-            net_load_mw = load[h] - discharge + charge
+            # D2: net_load_mw = gross_load - discharge. Surplus-wind charging never
+            # enters net_load. The baseline peak (below) never counts the charging
+            # draw either, so the metric compares two worlds that differ by storage
+            # alone; the grid never supplies surplus wind, so charging from it adds
+            # no grid load to net out.
+            net_load_mw = net
             margin = (
                 available_capacity_mw - net_load_mw
                 if available_capacity_mw is not None
