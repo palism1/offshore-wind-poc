@@ -7,6 +7,7 @@ question is a UI/copy decision, not a code fork (FACT_CHECK inconsistency #1).
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass, field
 from datetime import date
 from enum import StrEnum
@@ -24,7 +25,10 @@ class StorageAsset:
     power_mw
         Max charge/discharge power; caps energy moved in any single hour.
     efficiency
-        Round-trip efficiency used in the state equation (default 1.0).
+        Round-trip efficiency at the terminals (default 1.0). The engine never
+        applies this value directly: it charges once and discharges once per cycle,
+        so each leg carries ``one_way_efficiency`` (``sqrt(efficiency)``), and the
+        two legs multiply back to this round-trip figure.
     soc_floor_frac, strategic_reserve_frac
         Fractions of total capacity that together define the minimum SoC the engine
         never discharges below (the "reserve"). Team decision 2026-07-17: 20% floor
@@ -50,6 +54,22 @@ class StorageAsset:
     def min_soc_mwh(self) -> float:
         """Minimum state of charge (MWh) — the protected reserve floor."""
         return (self.soc_floor_frac + self.strategic_reserve_frac) * self.total_mwh
+
+    @property
+    def one_way_efficiency(self) -> float:
+        """Per-leg efficiency: ``sqrt(efficiency)``.
+
+        ``efficiency`` is round trip, measured at the terminals. The engine
+        charges once and discharges once per cycle, so each leg must carry the
+        square root of the round-trip figure for the two legs to multiply back to
+        it: ``sqrt(eff) * sqrt(eff) == eff``. The symmetric split (pump and
+        turbine equally efficient) is the modeling convention recorded in
+        `docs/FINDINGS_STENSEA_PAPER_2026-08-02.md` section 3, adopted here in the
+        engine itself. `storage_physics.one_way_from_round_trip` is the same
+        formula; `models` does not import it because `models` is the lowest layer
+        in the package and takes no intra-package import.
+        """
+        return math.sqrt(self.efficiency)
 
 
 @dataclass(frozen=True)

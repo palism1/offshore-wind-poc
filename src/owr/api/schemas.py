@@ -21,6 +21,7 @@ class ScenarioCreate(BaseModel):
     storage_total_mwh: float = Field(gt=0)
     storage_start_mwh: float = Field(ge=0)
     power_output_mw: float = Field(gt=0)
+    # Round trip at the terminals; the engine applies sqrt(efficiency) on each leg.
     efficiency: float = Field(default=1.0, gt=0, le=1.0)
     # Team decision 2026-07-17: 20% floor + 10% reserve = 30% protected, 70% usable.
     soc_floor_frac: float = Field(default=0.20, ge=0, lt=1.0)

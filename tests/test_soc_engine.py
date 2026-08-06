@@ -9,22 +9,26 @@ from owr.soc_engine import clamp_charge, clamp_discharge, next_soc, usable_energ
 
 
 def test_state_equation_lossless():
-    # eff = 1.0 -> soc just adds charge and subtracts discharge (Overview "100% efficient")
-    assert next_soc(100.0, charge=10.0, discharge=0.0, efficiency=1.0) == 110.0
-    assert next_soc(100.0, charge=0.0, discharge=10.0, efficiency=1.0) == 90.0
+    # one-way eff = 1.0 -> soc just adds charge and subtracts discharge (Overview
+    # "100% efficient")
+    assert next_soc(100.0, charge=10.0, discharge=0.0, one_way_efficiency=1.0) == 110.0
+    assert next_soc(100.0, charge=0.0, discharge=10.0, one_way_efficiency=1.0) == 90.0
 
 
 def test_state_equation_lossy():
-    # eff = 0.9 -> charge deposits 0.9*10=9; discharge withdraws 10/0.9 from the tank
-    assert next_soc(100.0, charge=10.0, discharge=0.0, efficiency=0.9) == pytest.approx(109.0)
-    assert next_soc(100.0, charge=0.0, discharge=10.0, efficiency=0.9) == pytest.approx(
-        100.0 - 10.0 / 0.9
-    )
+    # one-way eff = 0.9 -> charge deposits 0.9*10=9; discharge withdraws 10/0.9 from
+    # the tank
+    assert next_soc(
+        100.0, charge=10.0, discharge=0.0, one_way_efficiency=0.9
+    ) == pytest.approx(109.0)
+    assert next_soc(
+        100.0, charge=0.0, discharge=10.0, one_way_efficiency=0.9
+    ) == pytest.approx(100.0 - 10.0 / 0.9)
 
 
 def test_negative_flows_rejected():
     with pytest.raises(ValueError):
-        next_soc(100.0, charge=-1.0, discharge=0.0, efficiency=1.0)
+        next_soc(100.0, charge=-1.0, discharge=0.0, one_way_efficiency=1.0)
 
 
 def test_usable_energy_respects_reserve_floor():
@@ -52,3 +56,29 @@ def test_clamp_charge_by_headroom_and_power():
     asset = StorageAsset(total_mwh=1000, power_mw=50, efficiency=1.0)
     assert clamp_charge(980.0, 40.0, asset) == pytest.approx(20.0)  # headroom binds
     assert clamp_charge(500.0, 999.0, asset) == 50.0  # power binds
+
+
+def test_round_trip_efficiency_is_realized_across_a_full_cycle():
+    # D1: efficiency is round trip, and the engine splits it per leg. Charging 100
+    # MWh at the terminals and then discharging the tank back down to empty must
+    # deliver 0.72 * 100 = 72 MWh at the terminals, not 0.72**2 * 100 = 51.84.
+    asset = StorageAsset(
+        total_mwh=1000,
+        power_mw=1000,
+        efficiency=0.72,
+        soc_floor_frac=0.0,
+        strategic_reserve_frac=0.0,
+    )
+    soc = 0.0
+    charge = clamp_charge(soc, 100.0, asset)
+    soc = next_soc(soc, charge=charge, discharge=0.0, one_way_efficiency=asset.one_way_efficiency)
+    assert soc == pytest.approx(100.0 * asset.one_way_efficiency)
+
+    # Discharge leg through next_soc alone (not clamp_discharge, which still
+    # returns tank energy until Phase 3 and would drive soc below zero here).
+    delivered = soc * asset.one_way_efficiency
+    soc = next_soc(
+        soc, charge=0.0, discharge=delivered, one_way_efficiency=asset.one_way_efficiency
+    )
+    assert delivered == pytest.approx(72.0)
+    assert soc == pytest.approx(0.0)

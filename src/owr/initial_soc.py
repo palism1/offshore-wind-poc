@@ -27,5 +27,7 @@ def charge_from_wind(
         wind = day.hourly_wind_mw or (0.0,) * HOURS_PER_DAY
         for hour in range(HOURS_PER_DAY):
             charge = clamp_charge(soc, wind[hour], asset)
-            soc = next_soc(soc, charge=charge, discharge=0.0, efficiency=asset.efficiency)
+            soc = next_soc(
+                soc, charge=charge, discharge=0.0, one_way_efficiency=asset.one_way_efficiency
+            )
     return min(soc, asset.total_mwh)

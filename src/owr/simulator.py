@@ -179,7 +179,9 @@ def simulate(
             # Scale the peak/smooth split to the actually-delivered discharge.
             ratio = discharge / d_total[h] if d_total[h] > 0 else 0.0
             dp, ds = d_peak[h] * ratio, d_smooth[h] * ratio
-            soc = next_soc(soc, charge=0.0, discharge=discharge, efficiency=asset.efficiency)
+            soc = next_soc(
+                soc, charge=0.0, discharge=discharge, one_way_efficiency=asset.one_way_efficiency
+            )
             discharged_today += discharge
 
             # Off-peak recharge: any wind above this hour's (already reduced) net load
@@ -187,7 +189,9 @@ def simulate(
             net = load[h] - discharge
             surplus_wind = max(0.0, wind[h] - max(0.0, net))
             charge = clamp_charge(soc, surplus_wind, asset)
-            soc = next_soc(soc, charge=charge, discharge=0.0, efficiency=asset.efficiency)
+            soc = next_soc(
+                soc, charge=charge, discharge=0.0, one_way_efficiency=asset.one_way_efficiency
+            )
 
             net_load_mw = load[h] - discharge + charge
             margin = (

@@ -34,6 +34,7 @@ decision, see Open decisions below) · `reference` (informs design, not ingested
 | gridstatus library | https://github.com/gridstatus/gridstatus | ETL wrapper over ISO-NE + EIA (pragmatic extract layer) |
 | NOAA NCEI Bathymetric Data Viewer | https://www.ncei.noaa.gov/maps/bathymetry/ | Interactive seafloor-depth map (GEBCO, coastal relief, multibeam layers); draw the Gulf of Maine depth-vs-distance curve for a candidate StEnSea site |
 | GEBCO gridded global bathymetry | https://www.gebco.net/data_and_products/gridded_bathymetry_data/ | Downloadable depth grid behind most viewers; use for a numeric depth profile |
+| Metric Thresholds & Operating Ranges v1.1 | `docs/source/2026-08-05_Metric_Thresholds_v1.1.pdf` | Scenario Robustness Score blocker response: operating ranges for CMDR, SWE, FOP, RCM; sources the 30%/70% reserve split and corroborates the p90 stress rule |
 | CCOM/UNH Western Gulf of Maine bathymetry & backscatter | https://www.ccom.unh.edu/research/research-projects/wgom-bathymetry-backscatter | High-resolution multibeam survey of the western Gulf of Maine (the water nearest Cape Cod / Provincetown) |
 | Jordan Basin deep-water study (NOAA) | https://repository.library.noaa.gov/view/noaa/53045/noaa_53045_DS1.pdf | Primary-source depths for the Gulf's deep basins (Wilkinson/Jordan ~275 m, Georges 379 m) |
 
@@ -66,6 +67,33 @@ The recorded winter p90 threshold, **385,832.584 MWh/day** (see "Data pull compl
   interior holes; edge truncation needs a row count against the window.
 - A NaN in the requested fuel column means the pivot produced no such column, which is the
   signature of a renamed fuel upstream. The adapter raises on it.
+
+## Metric thresholds document — 2026-08-05
+
+Source: `docs/source/2026-08-05_Metric_Thresholds_v1.1.pdf`, "Metric Thresholds &
+Operating Ranges", the Scenario Robustness Score blocker response. Winter data only
+(December to February).
+
+- **Two anchor rows this repo relies on**, from the Winter Data Anchors table:
+  "Protected Reserve 30% of Total Capacity" and "Max Available Charge 70% of Total
+  Capacity".
+- **Reading**: 20% floor plus 10% strategic reserve equals the anchor table's 30%
+  protected; the split between the two stays a team choice, unsourced by this
+  document.
+- **Internal discrepancy**: the same document's RCM winter derivation writes
+  "Protected reserve floor = 20% of Total Capacity (cannot discharge below)", which
+  contradicts its own 30% anchor row. This repo's reading (20 + 10 = 30) is a choice
+  made in the face of that contradiction, not a resolution of it.
+- The document's p90 rule ("Stressed hours p90 threshold 18,413 MWh/hr") corroborates
+  `default_severity_percentile = 0.90` in `config.py`.
+- Its 18,413 MWh/hr threshold is an **hourly** basis figure, so it does not close the
+  open daily-threshold question already tracked in `config.py`'s
+  `default_severity_percentile` entry.
+- Its "Maximum available capacity = 70% of Total Capacity" matches the denominator
+  already implemented in `cli._build_report` as `total_mwh - min_soc_mwh`.
+- The four metrics this document defines, CMDR, SWE, FOP and RCM, are **not
+  implemented** in this codebase. They need per-event, winter-only wiring and oil
+  and gas series; see `docs/PLAN_REVIEW_FIXES.md` section 1, out of scope.
 
 ## Onboarding / team resources
 

@@ -1,5 +1,9 @@
 # Findings — Dick et al., StEnSea, Journal of Ocean Technology 18(1), 2023
 
+Superseded in part on 2026-08-06 by `docs/PLAN_REVIEW_FIXES.md` decision D1: the
+engine now splits the round-trip value itself, so `--efficiency 0.72` is correct
+and `sqrt(0.72)` must not be entered.
+
 Date: 2026-08-02. Point-in-time record, not current state.
 
 Source: `docs/source/Dick_et_al_StEnSea_V18N1.pdf`. Nine pages, journal pages 65 to 73.

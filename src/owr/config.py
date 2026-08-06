@@ -41,12 +41,17 @@ class Config:
         blank Step 5/6 sections means the exact allocation is not fully specified.)
 
     default_efficiency
-        Round-trip efficiency in ``soc(t+1)=soc(t)+charge*eff-discharge/eff``.
+        Round-trip efficiency, measured at the terminals, in
+        ``soc(t+1)=soc(t)+charge*one_way_eff-discharge/one_way_eff``. The engine
+        splits it symmetrically: each leg carries ``sqrt(eff)``
+        (`StorageAsset.one_way_efficiency`), so the two legs multiply back to this
+        round-trip figure. Enter a round-trip figure directly, never pre-squared:
+        Dick et al. Table 1 (`docs/FINDINGS_STENSEA_PAPER_2026-08-02.md`) gives 0.72
+        full cycle for StEnSea, and ``--efficiency 0.72`` realizes exactly that.
         Defaults to 1.0, which reconciles the Overview's "100% efficient" assumption
-        with the Architecture doc's efficiency term (FACT_CHECK inconsistency #2).
-        OPEN team question (round_trip_efficiency): ``config.py`` ships 1.0 while
-        Report B computed everything at 0.85; at 1.0 the engine understates required
-        charging energy by 17.6%. The storage pivot makes efficiency the axis
+        with the Architecture doc's efficiency term (FACT_CHECK inconsistency #2),
+        and is still an open team question: ``config.py`` ships 1.0 while Report B
+        computed everything at 0.85. The storage pivot makes efficiency the axis
         candidate technologies differ on (StEnSea 0.80, LAES 0.50-0.70, thermal
         ~0.35). Undecided.
 
@@ -58,6 +63,17 @@ class Config:
         below. OPEN team question (reserve_usage_rules): when the 10% reserve and
         20% floor may each be drawn down (until decided, both are treated as one
         protected floor).
+
+        The **combined** 0.30 is now sourced by
+        `docs/source/2026-08-05_Metric_Thresholds_v1.1.pdf`, Winter Data Anchors
+        table, rows "Protected Reserve 30% of Total Capacity" and "Max Available
+        Charge 70% of Total Capacity". The source fixes the total, not the 20/10
+        split; the split stays a team choice. The document disagrees with itself:
+        its RCM derivation writes "Protected reserve floor = 20% of Total Capacity
+        (cannot discharge below)", while its anchor table writes 30%. This repo
+        reads 20% floor plus 10% strategic reserve as equal to the anchor table's
+        30% protected, and records the discrepancy here rather than silently
+        picking one branch.
 
     default_severity_percentile
         **Doc-sourced** 2026-08-05. The Architecture export

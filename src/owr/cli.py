@@ -202,8 +202,8 @@ def build_parser() -> argparse.ArgumentParser:
         type=_finite_float,
         default=cfg.default_efficiency,
         help=(
-            f"round-trip efficiency (default {cfg.default_efficiency}) "
-            "[OPEN: round_trip_efficiency]"
+            f"round-trip efficiency, applied as sqrt(eff) on each leg "
+            f"(default {cfg.default_efficiency}) [OPEN: round_trip_efficiency]"
         ),
     )
     parser.add_argument(
