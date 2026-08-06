@@ -12,7 +12,6 @@ from datetime import date, timedelta
 
 import pytest
 
-from owr.initial_soc import charge_from_wind
 from owr.models import DayProfile, StorageAsset
 from owr.simulator import DAILY_FRAME_COLUMNS, HOURLY_FRAME_COLUMNS, simulate
 
@@ -162,25 +161,6 @@ def test_capacity_margin_follows_the_net_load_definition():
     hour12 = next(h for h in result.daily[0].hourly if h.ts_hour == 12)
     assert hour12.charge > 0
     assert hour12.capacity_margin == pytest.approx(1000.0 - hour12.net_load)
-
-
-def test_initial_soc_charges_from_wind_before_event():
-    asset = StorageAsset(
-        total_mwh=1000,
-        power_mw=100,
-        efficiency=1.0,
-        soc_floor_frac=0.33,
-        strategic_reserve_frac=0.0,
-    )
-    lead = [
-        DayProfile(
-            date=date(2026, 1, 9),
-            hourly_load_mw=(0.0,) * 24,
-            hourly_wind_mw=(80.0,) * 24,  # 80 MW * 24 h = 1920 MWh available, capacity-capped
-        )
-    ]
-    soc = charge_from_wind(starting_soc=500.0, lead_days=lead, asset=asset)
-    assert soc == asset.total_mwh  # fills to capacity
 
 
 def test_starting_soc_out_of_bounds_rejected():

@@ -128,6 +128,18 @@ _OPEN_QUESTIONS_STATIC = {
         ),
         "handoff_ref": "docs/PLAN_METRICS_COMPONENT7.md open questions",
     },
+    "wind_charge_source": {
+        "flags": [],
+        "note": (
+            "F5, docs/PLAN_REVIEW_FIXES.md: pre-event and in-window charging both "
+            "take surplus wind above the hour's load, so the rule cannot tell an "
+            "ISO-NE system-wide wind series (which serves load and is almost "
+            "never surplus) from a dedicated offshore farm whose output would go "
+            "to the reserve first. The shipped profiles carry system-wide wind, "
+            "so this rule returns the starting SoC unchanged on both."
+        ),
+        "handoff_ref": "docs/PLAN_REVIEW_FIXES.md Phase 5",
+    },
 }
 
 
@@ -622,6 +634,13 @@ def _build_report(
             "handoff_ref": _OPEN_QUESTIONS_STATIC["recharge_capacity_denominator"][
                 "handoff_ref"
             ],
+        },
+        {
+            "id": "wind_charge_source",
+            "flags": _OPEN_QUESTIONS_STATIC["wind_charge_source"]["flags"],
+            "value_used": "surplus wind above the hour's net load, charge and pre-charge alike",
+            "note": _OPEN_QUESTIONS_STATIC["wind_charge_source"]["note"],
+            "handoff_ref": _OPEN_QUESTIONS_STATIC["wind_charge_source"]["handoff_ref"],
         },
     ]
 

@@ -334,24 +334,46 @@ def test_lead_days_correctness_by_equality_against_charge_from_wind():
     assert report["simulated"]["soc_at_window_start_mwh"] < asset.total_mwh
 
 
-def test_lead_days_strictly_increase_charge_in_order():
+def test_lead_days_strictly_increase_charge_when_wind_exceeds_load(tmp_path):
+    # F5 makes charge_from_wind's fixture (real ISO-NE wind, which rarely exceeds
+    # load) an identity, so the old EXAMPLE-based fixture can no longer charge.
+    # This fixture's wind (3000 MW) exceeds its load (100 MW) in every hour, so
+    # surplus charging is real. --window all avoids any dependence on stress
+    # detection.
+    wind_csv = tmp_path / "surplus_wind.csv"
+    lines = ["date,hour,load_mw,wind_mw\n"]
+    for day in range(5):
+        for hour in range(24):
+            lines.append(f"2026-01-{day + 1:02d},{hour},100.0,3000.0\n")
+    wind_csv.write_text("".join(lines))
+
     def soc_for(n: int) -> float:
-        report = _report(
-            [
-                "--start-soc-mwh",
-                "20000",
-                "--window",
-                "1",
-                "--lead-days",
-                str(n),
-                "--storage-mwh",
-                "200000",
-            ]
-        )
-        return report["simulated"]["soc_at_window_start_mwh"]
+        import contextlib
+
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            code = cli.main(
+                [
+                    "--input", str(wind_csv),
+                    "--storage-mwh", "200000",
+                    "--power-mw", "2000",
+                    "--start-soc-mwh", "20000",
+                    "--window", "all",
+                    "--lead-days", str(n),
+                    "--format", "json",
+                ]
+            )
+        assert code == 0
+        return json.loads(buf.getvalue())["simulated"]["soc_at_window_start_mwh"]
 
     soc1, soc2, soc3 = soc_for(1), soc_for(2), soc_for(3)
     assert soc1 < soc2 < soc3
+
+
+def test_wind_charge_source_open_question_is_reported():
+    report = _report([])
+    ids = [q["id"] for q in report["open_questions"]]
+    assert "wind_charge_source" in ids
 
 
 def test_lead_days_zero_equals_starting_soc():
