@@ -10,6 +10,8 @@ import datetime
 import math
 from datetime import date, timedelta
 
+import pytest
+
 from owr.initial_soc import charge_from_wind
 from owr.models import DayProfile, StorageAsset
 from owr.simulator import DAILY_FRAME_COLUMNS, HOURLY_FRAME_COLUMNS, simulate
@@ -57,6 +59,32 @@ def test_rolling_window_shaves_peak_and_respects_reserve():
     assert result.reserve_peak_mw < result.baseline_peak_mw
     # SoC was actually drawn down (energy was delivered)
     assert result.final_soc < asset.total_mwh
+
+
+@pytest.mark.parametrize("efficiency", [0.5, 0.72])
+def test_soc_never_crosses_the_floor_at_lossy_efficiency(efficiency):
+    # F1's own repro at engine scale: before the fix, --efficiency 0.72 on the
+    # shipped demo scenario drove SoC below the protected floor.
+    asset = StorageAsset(
+        total_mwh=20000,
+        power_mw=2000,
+        efficiency=efficiency,
+        soc_floor_frac=0.33,
+        strategic_reserve_frac=0.0,
+    )
+    window = [_stress_day(i) for i in range(3)]
+
+    result = simulate(
+        asset,
+        window,
+        starting_soc=asset.total_mwh,  # fully charged pre-event
+        available_capacity_mw=13000.0,
+    )
+
+    for day in result.daily:
+        for hour in day.hourly:
+            assert hour.soc >= asset.min_soc_mwh - 1e-6
+    assert result.final_soc >= asset.min_soc_mwh - 1e-6
 
 
 def test_initial_soc_charges_from_wind_before_event():

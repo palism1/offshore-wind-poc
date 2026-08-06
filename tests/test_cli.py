@@ -297,6 +297,16 @@ def test_reserve_peak_below_baseline_and_positive_severity_reduction():
     assert summary["severity_reduction"] > 0
 
 
+def test_no_hourly_soc_below_min_soc_at_lossy_efficiency():
+    # F1's own demo repro: --efficiency 0.72 on the real winter stress scenario
+    # used to drive SoC below the protected floor.
+    report = _report(["--efficiency", "0.72"])
+    min_soc = report["asset"]["min_soc_mwh"]
+    for day in report["daily"]:
+        for hour in day["hourly"]:
+            assert hour["soc"] >= min_soc - 1e-6
+
+
 def test_window_1_simulates_only_the_window():
     report = _report(["--window", "1"])
     window = report["stress_windows"][0]

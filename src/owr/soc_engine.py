@@ -28,13 +28,26 @@ def next_soc(
 
 
 def usable_energy(soc: float, asset: StorageAsset) -> float:
-    """Energy that may be discharged before hitting the protected reserve floor."""
-    return max(0.0, soc - asset.min_soc_mwh)
+    """Deliverable energy at the terminals before hitting the protected reserve floor.
+
+    ``discharge`` is energy at the terminals; delivering it costs
+    ``discharge / one_way_efficiency`` out of the tank. Tank energy above the floor
+    is ``soc - min_soc_mwh``; deliverable energy is therefore that tank quantity
+    scaled down by the leg, ``(soc - min_soc_mwh) * one_way_efficiency``. The
+    source rule is `docs/source/2026-08-05_Metric_Thresholds_v1.1.pdf`, RCM winter
+    derivation: "Protected reserve floor = 20% of Total Capacity (cannot discharge
+    below)". The tank basis and the terminal basis coincide at efficiency 1.0
+    (``one_way_efficiency == 1.0``), which is why the suite never caught this
+    before F1: every test built its asset at the lossless default.
+    """
+    return max(0.0, soc - asset.min_soc_mwh) * asset.one_way_efficiency
 
 
 def clamp_discharge(soc: float, requested: float, asset: StorageAsset) -> float:
     """Limit a requested discharge to what is available above the reserve floor and
-    within the per-hour power limit."""
+    within the per-hour power limit. All three terms — ``requested``, ``available``
+    and ``asset.power_mw`` — are terminal-basis MWh/MW; ``usable_energy`` converts
+    the tank-basis floor into that same terminal basis before the comparison."""
     if requested < 0:
         raise ValueError("requested discharge must be non-negative")
     available = usable_energy(soc, asset)

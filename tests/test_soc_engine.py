@@ -82,3 +82,48 @@ def test_round_trip_efficiency_is_realized_across_a_full_cycle():
     )
     assert delivered == pytest.approx(72.0)
     assert soc == pytest.approx(0.0)
+
+
+def test_clamp_discharge_caps_at_deliverable_energy_above_the_floor():
+    # F1's own repro: at eff=0.64 the leg is exactly 0.8 (sqrt(0.64)). Tank energy
+    # above the floor is 40 - 30 = 10 MWh; deliverable at the terminals is
+    # 10 * 0.8 = 8 MWh, not the 10 MWh tank figure the pre-fix code returned.
+    asset = StorageAsset(
+        total_mwh=100, power_mw=100, efficiency=0.64, soc_floor_frac=0.30,
+        strategic_reserve_frac=0.0,
+    )
+    assert clamp_discharge(40.0, 50.0, asset) == pytest.approx(8.0)
+    assert next_soc(
+        40.0, charge=0.0, discharge=8.0, one_way_efficiency=asset.one_way_efficiency
+    ) == pytest.approx(30.0)
+
+
+@pytest.mark.parametrize("efficiency", [0.5, 0.72])
+def test_floor_invariant_holds_at_lossy_efficiency(efficiency):
+    # F7a: the engine must never discharge below the protected reserve floor,
+    # source rule docs/source/2026-08-05_Metric_Thresholds_v1.1.pdf, RCM winter
+    # derivation ("Protected reserve floor = 20% of Total Capacity"). Tolerance
+    # because the round trip through a multiply and a divide is not exact in
+    # IEEE 754; no epsilon is added to production code.
+    asset = StorageAsset(total_mwh=1000, power_mw=1000, efficiency=efficiency)
+    min_soc = asset.min_soc_mwh
+    socs = (min_soc, min_soc + 1, asset.total_mwh / 2, asset.total_mwh)
+    requests = (0.0, 1.0, asset.total_mwh, 10 * asset.total_mwh)
+    for soc in socs:
+        for requested in requests:
+            discharge = clamp_discharge(soc, requested, asset)
+            new_soc = next_soc(
+                soc, charge=0.0, discharge=discharge, one_way_efficiency=asset.one_way_efficiency
+            )
+            assert new_soc >= min_soc - 1e-9
+
+
+def test_usable_energy_is_terminal_basis_and_matches_tank_basis_when_lossless():
+    lossy = StorageAsset(total_mwh=1000, power_mw=100, efficiency=0.5)
+    lossless = StorageAsset(total_mwh=1000, power_mw=100, efficiency=1.0)
+    soc = 700.0
+    tank_above_floor = soc - lossy.min_soc_mwh
+    assert usable_energy(soc, lossy) == pytest.approx(
+        tank_above_floor * lossy.one_way_efficiency
+    )
+    assert usable_energy(soc, lossless) == pytest.approx(soc - lossless.min_soc_mwh)

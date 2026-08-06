@@ -36,6 +36,11 @@ def daily_budget(
     Caps at ``energy_budget_fraction`` of usable energy (the "80% rule"), then takes
     this day's share of that cap in proportion to its priority among the remaining
     stress days. With a single remaining day this is just the 80% cap.
+
+    ``usable_energy_mwh`` is energy deliverable at the terminals
+    (``soc_engine.usable_energy``, since F1), so the 80% rule caps a terminal-basis
+    budget. ``dispatch.allocate_discharge`` then allocates that budget as hourly
+    discharge, itself a terminal-basis quantity, so the units agree end to end.
     """
     if usable_energy_mwh <= 0:
         return 0.0

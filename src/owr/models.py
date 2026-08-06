@@ -296,6 +296,28 @@ class HourlyResult:
 
 @dataclass(frozen=True)
 class DailyResult:
+    """One day's summary from the simulation loop.
+
+    date
+        Calendar date of the simulated day.
+    budget
+        Energy (MWh), terminal basis, this day was allowed to discharge
+        (``budget.daily_budget``).
+    priority
+        This day's priority score among the remaining stress days
+        (``budget.priority``).
+    usable_energy
+        Energy (MWh) deliverable at the terminals above the reserve floor, as of
+        the end of the day (``soc_engine.usable_energy``). Terminal basis and tank
+        basis coincide at efficiency 1.0. The JSON key and the API field keep this
+        name.
+    recharge_sufficiency_ratio
+        Ratio of recharge available to the next day's expected need; ``None`` on
+        the window's last day (``budget.recharge_sufficiency_ratio``).
+    hourly
+        Per-hour results for the day.
+    """
+
     date: date
     budget: float
     priority: float
