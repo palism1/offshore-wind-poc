@@ -71,9 +71,20 @@ class RunOut(BaseModel):
 
 
 class StressWindowOut(BaseModel):
+    """Component 3 event row. ``first_hour_index`` and ``last_hour_index`` are
+    derived from ``days`` on the engine side and are echoed here, never stored.
+    The three optional fields are ``None`` when the detection path could not supply
+    them. See docs/PLAN_ARCH_0805_SYNC.md decisions D4 to D7.
+    """
+
     start: date
     end: date
     days: int
+    first_hour_index: int
+    last_hour_index: int
+    peak_hourly_load_mw: float | None = None
+    threshold_mwh: float | None = None
+    severity_percentile: float | None = None
 
 
 class HourlyResultOut(BaseModel):

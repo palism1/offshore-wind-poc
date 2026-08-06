@@ -94,6 +94,33 @@ def test_full_run_flow(client: TestClient):
     assert pkg["payload"]["code_version"]  # provenance tag present
 
 
+def test_stress_windows_endpoint_carries_component3_fields(client: TestClient):
+    sid = client.post("/scenarios", json=_scenario_body()).json()["id"]
+    run = client.post(f"/scenarios/{sid}/runs", json={"days": _days()})
+    rid = run.json()["id"]
+
+    windows = client.get(f"/runs/{rid}/stress-windows").json()
+    w = windows[0]
+    expected_keys = {
+        "start",
+        "end",
+        "days",
+        "first_hour_index",
+        "last_hour_index",
+        "peak_hourly_load_mw",
+        "threshold_mwh",
+        "severity_percentile",
+    }
+    assert expected_keys <= w.keys()
+    assert w["first_hour_index"] == 0
+    assert w["last_hour_index"] == 71
+    assert w["severity_percentile"] == 0.5
+    assert isinstance(w["threshold_mwh"], float)
+    assert w["peak_hourly_load_mw"] == max(
+        h for day in _days() for h in day["hourly_load_mw"]
+    )
+
+
 def test_run_against_missing_scenario_404(client: TestClient):
     assert client.post("/scenarios/999/runs", json={"days": _days()}).status_code == 404
 
