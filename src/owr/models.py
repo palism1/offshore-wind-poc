@@ -33,7 +33,12 @@ class StorageAsset:
         Fractions of total capacity that together define the minimum SoC the engine
         never discharges below (the "reserve"). Team decision 2026-07-17: 20% floor
         + 10% reserve = 30% protected, 70% for regular operations. See Config for the
-        still-open question of when each may be drawn down.
+        still-open question of when each may be drawn down. The **combined** 0.30 is
+        sourced by `docs/source/2026-08-05_Metric_Thresholds_v1.1.pdf`, Winter Data
+        Anchors table ("Protected Reserve 30% of Total Capacity" / "Max Available
+        Charge 70% of Total Capacity"); the source fixes the total, not the 20/10
+        split, which stays a team choice. Both fractions must be non-negative and
+        their sum must be in ``[0, 1)``, mirroring ``Config``.
     """
 
     total_mwh: float
@@ -49,6 +54,11 @@ class StorageAsset:
             raise ValueError("power_mw must be positive")
         if not 0.0 < self.efficiency <= 1.0:
             raise ValueError("efficiency must be in (0, 1]")
+        if self.soc_floor_frac < 0 or self.strategic_reserve_frac < 0:
+            raise ValueError("soc_floor_frac and strategic_reserve_frac must be >= 0")
+        floor = self.soc_floor_frac + self.strategic_reserve_frac
+        if not 0.0 <= floor < 1.0:
+            raise ValueError("soc_floor + strategic_reserve must be in [0, 1)")
 
     @property
     def min_soc_mwh(self) -> float:

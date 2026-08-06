@@ -135,3 +135,18 @@ def test_starting_soc_out_of_bounds_returns_422(client: TestClient):
     sid = client.post("/scenarios", json=_scenario_body()).json()["id"]
     r = client.post(f"/scenarios/{sid}/runs", json={"days": _days(), "starting_soc": 999999})
     assert r.status_code == 422
+
+
+def test_run_with_an_impossible_floor_is_rejected_not_silently_zero(client: TestClient):
+    # F4's own repro, inverted: a scenario whose fractions sum above 1.0 built a
+    # StorageAsset with no validation and returned status "succeeded" with
+    # severity_reduction 0.0. Now the scenario POST still succeeds (out of scope,
+    # see plan section 1), but the run fails loud. `client` builds a fresh
+    # InMemoryRepository per test, so this is the run created and its id is 1.
+    body = _scenario_body()
+    body["soc_floor_frac"] = 0.9
+    body["strategic_reserve_frac"] = 0.9
+    sid = client.post("/scenarios", json=body).json()["id"]
+    run = client.post(f"/scenarios/{sid}/runs", json={"days": _days()})
+    assert run.status_code == 422
+    assert client.get("/runs/1").json()["status"] == "failed"
