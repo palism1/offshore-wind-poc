@@ -6,7 +6,7 @@ import argparse
 import io
 import json
 import re
-from datetime import timedelta
+from datetime import date, timedelta
 
 import pytest
 
@@ -415,6 +415,78 @@ def test_list_windows_returns_zero_without_asset_flags(capsys):
     assert code == 0
     out = capsys.readouterr().out
     assert "2026-01-09" in out
+
+
+def test_list_windows_json_carries_the_component3_fields(capsys):
+    code = cli.main(["--input", EXAMPLE, "--list-windows", "--format", "json"])
+    assert code == 0
+    payload = json.loads(capsys.readouterr().out)
+    w = payload["stress_windows"][0]
+    expected_keys = {
+        "start",
+        "end",
+        "days",
+        "first_hour_index",
+        "last_hour_index",
+        "peak_hourly_load_mw",
+        "threshold_mwh",
+        "severity_percentile",
+    }
+    assert expected_keys <= w.keys()
+    assert w["first_hour_index"] == 0
+    assert w["last_hour_index"] == 24 * w["days"] - 1
+    assert w["severity_percentile"] == DEFAULT_CONFIG.default_severity_percentile
+    assert w["threshold_mwh"] > 0
+
+
+def test_peak_hourly_load_matches_the_file(capsys):
+    with open(EXAMPLE, encoding="utf-8") as f:
+        day_set = read_day_profiles(f, origin=EXAMPLE)
+    by_date = {d.date: d for d in day_set.days}
+
+    code = cli.main(["--input", EXAMPLE, "--list-windows", "--format", "json"])
+    assert code == 0
+    payload = json.loads(capsys.readouterr().out)
+    w = payload["stress_windows"][0]
+
+    start = date.fromisoformat(w["start"])
+    end = date.fromisoformat(w["end"])
+    expected_peak = 0.0
+    day = start
+    while day <= end:
+        expected_peak = max(expected_peak, max(by_date[day].hourly_load_mw))
+        day += timedelta(days=1)
+
+    assert w["peak_hourly_load_mw"] == expected_peak
+
+
+def test_report_and_list_windows_agree_on_window_fields(capsys):
+    report_window = _report([])["stress_windows"][0]
+
+    code = cli.main(["--input", EXAMPLE, "--list-windows", "--format", "json"])
+    assert code == 0
+    list_window = json.loads(capsys.readouterr().out)["stress_windows"][0]
+
+    assert report_window == list_window
+
+
+def test_stress_window_output_fields_open_question_is_reported(capsys):
+    report = _report([])
+    ids = [q["id"] for q in report["open_questions"]]
+    assert "stress_window_output_fields" in ids
+
+    code = cli.main(["--input", EXAMPLE, "--storage-mwh", "20000", "--power-mw", "2000"])
+    assert code == 0
+    out = capsys.readouterr().out
+    assert "[OPEN: stress_window_output_fields]" in out
+
+
+def test_render_table_prints_dash_for_a_missing_peak():
+    report = _report([])
+    report["stress_windows"][0]["peak_hourly_load_mw"] = None
+    buf = io.StringIO()
+    cli._render_table(report, argparse.Namespace(name=None), buf)
+    assert "peak -" in buf.getvalue()
 
 
 def test_warnings_on_stderr_results_on_stdout(capsys):
