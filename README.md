@@ -52,6 +52,10 @@ uv run simulate --input examples/synthetic_winter_stress.csv --storage-mwh 20000
 # same command, over a real 11-day ISO-NE winter stress event (no wind data; see below)
 uv run simulate --input examples/real_winter_stress_2026.csv --storage-mwh 60000 --power-mw 4320
 
+# sweep severity reduction across a storage-size ladder and render a chart
+# (needs the viz extra: uv sync --group dev --extra etl --extra api --extra viz)
+uv run sweep --input examples/real_winter_stress_2026.csv --power-mw 4320 --chart /tmp/sweep.png
+
 # run the API (Phase 4) — no database or credentials required
 uv run --with uvicorn uvicorn owr.api.app:app --reload
 #   OpenAPI docs / integration contract at http://127.0.0.1:8000/docs
@@ -68,6 +72,8 @@ the `owr.api.store.Repository` interface.
 
 ```
 src/owr/            simulation engine (Phase 3) + config/models + CLI (owr.cli)
+src/owr/sweep*.py    storage-size sweep: engine core (owr.sweep) + CLI (owr.sweep_cli,
+                     owr.sweep_chart); the chart module is the only place Matplotlib enters
 db/migrations/      PostgreSQL schema (Phase 1)
 tests/              pytest suite (one test module per engine module)
 docs/               plan, fact-check report, diagram references
