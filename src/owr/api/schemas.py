@@ -30,6 +30,9 @@ class ScenarioCreate(BaseModel):
     date_start: date
     date_end: date
     min_stress_window_days: int = Field(default=2, ge=1)
+    # 0.90 is sourced: Architecture 2026-08-05 Component 3, "90th historical daily
+    # load percentile". min_stress_window_days is the source's minimum_window, which
+    # the source leaves without a value; 2 is a team choice.
     severity_percentile: float = Field(default=0.90, ge=0, le=1.0)
     transmission_limit_mw: float | None = None
     available_capacity_mw: float | None = None

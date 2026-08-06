@@ -110,6 +110,30 @@ def test_table_output_contains_summary_labels_and_open_markers(capsys):
     assert "[OPEN: cycles_per_year]" in out
 
 
+def test_stress_event_note_names_the_source():
+    report = _report([])
+    entries = {q["id"]: q for q in report["open_questions"]}
+    note = entries["stress_event_definition"]["note"]
+    assert "90th historical daily load percentile" in note
+    assert "minimum_window" in note
+    assert "12+ hours above threshold within a day" not in note
+
+
+def test_list_windows_text_names_the_source(capsys):
+    code = cli.main(["--input", EXAMPLE, "--list-windows"])
+    assert code == 0
+    out = capsys.readouterr().out
+    assert "Architecture 2026-08-05 Component 3" in out
+    assert "[OPEN: stress_event_definition]" in out
+
+
+def test_table_stress_block_names_the_source(capsys):
+    code = cli.main(["--input", EXAMPLE, "--storage-mwh", "20000", "--power-mw", "2000"])
+    assert code == 0
+    out = capsys.readouterr().out
+    assert "Architecture 2026-08-05 Component 3" in out
+
+
 def test_daily_table_columns_align_across_magnitudes():
     # Column starts must match the header regardless of how many digits a
     # value has, proving the table is built from one shared column layout

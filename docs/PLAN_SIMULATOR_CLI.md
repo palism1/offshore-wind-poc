@@ -495,6 +495,8 @@ Superseded 2026-07-28 — this transcript is illustrative only and is now stale 
 percentile...` and `stress_event_definition  used 0.900 / 2 days` (default moved 0.95 → 0.90),
 and the `equivalent full cycles` line reads `(energy discharged / rated capacity)`, not
 `(energy drawn / rated capacity)` — the divide-by-efficiency formula was retired.
+Superseded again 2026-08-05: the 0.90 percentile is doc-sourced. See
+`docs/PLAN_ARCH_0805_SYNC.md` Change A.
 
 Omit the pre-event charging section when there are no lead days. Omit the min capacity
 margin line when `--available-capacity-mw` is unset.

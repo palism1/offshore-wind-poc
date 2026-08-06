@@ -63,13 +63,15 @@ _OPEN_QUESTIONS_STATIC = {
     "stress_event_definition": {
         "flags": ["--severity-percentile", "--min-stress-window-days"],
         "note": (
-            "Settled 2026-07-28: daily total demand at or above a percentile of "
-            "the series, with a run of N consecutive such days forming an event. "
-            "Report B's 12-hour rule (12+ hours above threshold within a day) is "
-            "retired. What remains open is the threshold value on real data: both "
-            "published numbers (3,504 and 16,750 MWh) are hourly-basis and do not "
-            "carry over to a daily-basis rule, so a fresh p90 must be computed on "
-            "daily sums."
+            "Rule and percentile are doc-sourced as of the 2026-08-05 "
+            "Architecture export, Component 3: 'Determine: 90th historical "
+            "daily load percentile. A stress event begins when: daily_load >= "
+            "90th percentile for minimum_window consecutive days.' Report B's "
+            "12-hour rule is retired. Still open: the threshold value in MWh on "
+            "real data. Both published numbers (3,504 and 16,750 MWh) are "
+            "hourly-basis and do not carry over to a daily-basis rule, so a "
+            "fresh p90 must be computed on daily sums. The source gives "
+            "minimum_window no value, so 2 stays a team choice."
         ),
         "handoff_ref": "docs/HANDOFF.md open question 2",
     },
@@ -214,8 +216,8 @@ def build_parser() -> argparse.ArgumentParser:
         type=_finite_float,
         default=cfg.default_severity_percentile,
         help=(
-            f"stress-day percentile threshold (default {cfg.default_severity_percentile}) "
-            "[OPEN: stress_event_definition]"
+            f"stress-day percentile threshold (default {cfg.default_severity_percentile}, "
+            "sourced: Architecture 2026-08-05 Component 3) [OPEN: stress_event_definition]"
         ),
     )
     parser.add_argument(
@@ -224,7 +226,8 @@ def build_parser() -> argparse.ArgumentParser:
         default=cfg.default_min_stress_window_days,
         help=(
             f"minimum consecutive stressed days forming an event "
-            f"(default {cfg.default_min_stress_window_days}) [OPEN: stress_event_definition]"
+            f"(default {cfg.default_min_stress_window_days}, team choice; the source names "
+            "minimum_window and gives no value) [OPEN: stress_event_definition]"
         ),
     )
     parser.add_argument(
@@ -688,6 +691,10 @@ def _render_list_windows(
         f"stress windows (severity >= {args.severity_percentile:.3f} percentile, "
         f">= {args.min_stress_window_days} consecutive day(s))   [OPEN: stress_event_definition]\n"
     )
+    out.write(
+        "  source: Architecture 2026-08-05 Component 3. The percentile is sourced; "
+        "the minimum_window value is a team choice.\n"
+    )
     if not windows:
         out.write("  none\n")
     for i, w in enumerate(windows, 1):
@@ -750,6 +757,10 @@ def _render_table(report: dict, args: argparse.Namespace, out: TextIO) -> None:
     out.write(
         f"  rule: daily energy >= {cfg['default_severity_percentile']:.3f} percentile of the "
         f"series; >= {cfg['default_min_stress_window_days']} consecutive days\n"
+    )
+    out.write(
+        "  source: Architecture 2026-08-05 Component 3. The percentile is sourced; "
+        "the minimum_window value is a team choice.\n"
     )
     for i, w in enumerate(report["stress_windows"], 1):
         out.write(f"  {i}   {w['start']} .. {w['end']}   {w['days']} days\n")
