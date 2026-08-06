@@ -1,5 +1,10 @@
 # Plan: sync the code to the 2026-08-05 Architecture export
 
+**Status, 2026-08-05: shipped.** Branch `arch-0805-sync`, cut from `main` at
+`9dee3ef`. Commits: `86979ba` (Phase 1), `51aba25` (Change B phase 1), `a5e4bfa`
+(Change B phase 2), `3ec20e1` (Change B phase 3), plus this docs commit for Phase 5.
+Final counts: 572 passed, 4 skipped (3 Postgres, 1 viz), `uv run ruff check .` clean.
+
 Two changes against `docs/source/2026-08-05_Software_Architecture_Documentation.md`,
 Component 3. Change A relabels one config value from a team choice to a sourced value.
 Change B implements the four output-table fields the export named.
