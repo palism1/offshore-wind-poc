@@ -13,9 +13,20 @@ Format: one row per hour, header required, column order irrelevant, names
 case-insensitive. Blank lines and lines starting with ``#`` are skipped, so a file
 can carry its own provenance banner.
 
-Columns: ``date`` (YYYY-MM-DD, required), ``hour`` (0-23, required), ``load_mw``
-(required), ``wind_mw`` (optional), ``demand_percentile`` (optional, constant per
-date), ``wind_forecast_frac`` (optional, constant per date).
+Columns: ``date`` (YYYY-MM-DD, required), ``hour`` (1-24 hour-ending, or 0-23
+hour-beginning; required), ``load_mw`` (required), ``wind_mw`` (optional),
+``demand_percentile`` (optional, constant per date), ``wind_forecast_frac``
+(optional, constant per date).
+
+``hour`` accepts either convention (change 9, 2026-08-05 to 08-06 Discord). The
+convention is decided once per file, from the set of raw hour values the whole
+file carries: a file that contains ``0`` (and never ``24``) is hour-beginning,
+and the internal 0-based index equals the raw hour. A file that contains ``24``
+(and never ``0``) is hour-ending, and the internal index is ``hour - 1``; hour
+24 maps to internal index 23 and stays on the same calendar date, never rolling
+over. A file that carries both 0 and 24 is rejected: the two conventions cannot
+coexist in one file. ``DayProfileSet.hour_convention`` reports which one a
+parsed file used.
 
 ``demand_percentile`` absent is derived as the empirical CDF of the day's energy
 within the supplied series: ``count(load_mwh <= load_mwh(d)) / n_days``. Defaulting
@@ -72,6 +83,7 @@ class DayProfileSet:
     wind_forecast_frac_source: str  # "file" | "default-zero"
     has_wind: bool
     warnings: tuple[str, ...]
+    hour_convention: str  # "hour-ending-1-24" | "hour-beginning-0-23"
 
 
 def _err(origin: str, lineno: int | None, message: str) -> ScenarioInputError:
@@ -152,10 +164,12 @@ def read_day_profiles(stream: TextIO, *, origin: str) -> DayProfileSet:
     if not raw_rows:
         raise _err(origin, None, "no data rows")
 
-    # hour -> value, per date; and per-date scalar tracking.
-    by_date: dict[date, dict[int, dict[str, float]]] = {}
+    # raw hour -> value, per date; and per-date scalar tracking. Keyed on the raw
+    # hour from the file (0-23 or 1-24) until the convention is known.
+    raw_by_date: dict[date, dict[int, dict[str, float]]] = {}
     per_date_scalar: dict[date, dict[str, float]] = {}
     order: list[date] = []
+    hours_seen: set[int] = set()
 
     for i, row in enumerate(raw_rows):
         lineno = linenos[i + 1]
@@ -175,8 +189,9 @@ def read_day_profiles(stream: TextIO, *, origin: str) -> DayProfileSet:
             hour = int(raw_hour)
         except ValueError as exc:
             raise _err(origin, lineno, f"column 'hour': not an integer: {raw_hour!r}") from exc
-        if not 0 <= hour <= 23:
-            raise _err(origin, lineno, f"column 'hour': must be in 0..23, got {hour}")
+        if not 0 <= hour <= 24:
+            raise _err(origin, lineno, f"column 'hour': must be in 0..24, got {hour}")
+        hours_seen.add(hour)
 
         raw_load = (row.get(fieldmap["load_mw"]) or "").strip()
         if not raw_load:
@@ -193,13 +208,13 @@ def read_day_profiles(stream: TextIO, *, origin: str) -> DayProfileSet:
         else:
             wind_mw = None
 
-        if d not in by_date:
-            by_date[d] = {}
+        if d not in raw_by_date:
+            raw_by_date[d] = {}
             per_date_scalar[d] = {}
             order.append(d)
-        if hour in by_date[d]:
+        if hour in raw_by_date[d]:
             raise _err(origin, lineno, f"duplicate (date, hour) pair: ({d.isoformat()}, {hour})")
-        by_date[d][hour] = {"load_mw": load_mw, "wind_mw": wind_mw}
+        raw_by_date[d][hour] = {"load_mw": load_mw, "wind_mw": wind_mw}
 
         for col, present in (
             ("demand_percentile", has_demand_percentile),
@@ -226,6 +241,41 @@ def read_day_profiles(stream: TextIO, *, origin: str) -> DayProfileSet:
                     f"({existing!r} vs {val!r}); it must be constant per date",
                 )
             per_date_scalar[d][col] = val
+
+    # Decide the hour convention once, from the set of raw hour values the whole
+    # file carries (rule 3, change 9). The convention is per file, not per date.
+    has_hour_0 = 0 in hours_seen
+    has_hour_24 = 24 in hours_seen
+    if has_hour_0 and has_hour_24:
+        raise _err(
+            origin, None, "mixed hour conventions: the file carries both hour 0 and hour 24"
+        )
+    if has_hour_24:
+        hour_convention = "hour-ending-1-24"
+
+        def _to_internal(raw: int) -> int:
+            return raw - 1
+
+    elif has_hour_0:
+        hour_convention = "hour-beginning-0-23"
+
+        def _to_internal(raw: int) -> int:
+            return raw
+
+    else:
+        # Unreachable for a valid file: the reader requires exactly 24 rows per
+        # date (checked below) and 24 distinct values drawn from 0..24 must
+        # contain 0 or 24. This guards a file that would fail that check.
+        raise _err(
+            origin,
+            None,
+            "cannot determine hour convention: no row carries hour 0 or hour 24",
+        )
+
+    by_date: dict[date, dict[int, dict[str, float]]] = {
+        d: {_to_internal(raw): value for raw, value in hours.items()}
+        for d, hours in raw_by_date.items()
+    }
 
     # Sort dates for a stable, order-independent result.
     sorted_dates = sorted(order)
@@ -305,4 +355,5 @@ def read_day_profiles(stream: TextIO, *, origin: str) -> DayProfileSet:
         wind_forecast_frac_source=wind_forecast_frac_source,
         has_wind=has_wind,
         warnings=tuple(warnings),
+        hour_convention=hour_convention,
     )

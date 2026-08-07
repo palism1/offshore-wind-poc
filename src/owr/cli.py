@@ -669,6 +669,7 @@ def _build_report(
             "demand_percentile_source": day_set.demand_percentile_source,
             "wind_forecast_frac_source": day_set.wind_forecast_frac_source,
             "has_wind": day_set.has_wind,
+            "hour_convention": day_set.hour_convention,
         },
         "asset": {
             "total_mwh": asset.total_mwh,
@@ -799,6 +800,7 @@ def _render_table(report: dict, args: argparse.Namespace, out: TextIO) -> None:
         out.write("  demand percentile    derived from series rank (column absent)\n")
     else:
         out.write("  demand percentile    read from file\n")
+    out.write(f"  hour convention      {inp['hour_convention']}\n")
     if inp["has_wind"]:
         out.write("  wind_mw              present (hourly series, from file)\n")
     else:

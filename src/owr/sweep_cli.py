@@ -252,7 +252,14 @@ def _run(args: argparse.Namespace) -> int:
 
     result = run_sweep(spec, span_days=days, config=cfg)
 
-    report = _build_report(args=args, days=days, spec=spec, cfg=cfg, result=result)
+    report = _build_report(
+        args=args,
+        days=days,
+        spec=spec,
+        cfg=cfg,
+        result=result,
+        hour_convention=day_set.hour_convention,
+    )
 
     if args.chart:
         title, subtitle, footer = _chart_text(args=args, days=days, spec=spec, report=report)
@@ -299,12 +306,14 @@ def _build_report(
     spec: SweepSpec,
     cfg: Config,
     result,
+    hour_convention: str,
 ) -> dict:
     input_block = {
         "path": args.input,
         "days_read": len(days),
         "date_start": days[0].date.isoformat(),
         "date_end": days[-1].date.isoformat(),
+        "hour_convention": hour_convention,
     }
     spec_block = {
         "sizes_mwh": list(spec.sizes_mwh),
@@ -403,6 +412,7 @@ def _render_table(report: dict, args: argparse.Namespace, out: TextIO) -> None:
         f"  days read            {inp['days_read']}  ({inp['date_start']} .. {inp['date_end']})\n"
     )
     out.write(f"  simulated            {inp['days_read']} days, every day in the file\n")
+    out.write(f"  hour convention      {inp['hour_convention']}\n")
     if spec["power_rule"] == "fixed":
         rule_str = f"fixed, {spec['power_mw']:,.0f} MW at every size"
     else:

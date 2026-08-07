@@ -280,9 +280,10 @@ def test_unparseable_date_rejected():
 
 
 def test_hour_out_of_range_rejected():
+    # 24 is now a valid hour-ending value (change 9); the out-of-range bound is 25.
     lines = _rows("2026-01-10", _flat_load())
     parts = lines[0].split(",")
-    parts[1] = "24"
+    parts[1] = "25"
     lines[0] = ",".join(parts)
     content = _csv("date,hour,load_mw", lines)
     with pytest.raises(ScenarioInputError, match="test:2"):
@@ -368,3 +369,88 @@ def test_blank_header_cell_still_reports_the_missing_column():
     content = _csv("date,,load_mw", lines)
     with pytest.raises(ScenarioInputError, match="hour"):
         read_day_profiles(io.StringIO(content), origin="test")
+
+
+# --------------------------------------------------------------------------- #
+# Hour convention: hour-ending 1-24 vs. hour-beginning 0-23 (change 9)
+# --------------------------------------------------------------------------- #
+
+
+def _rows_ending(date_str: str, load_values: list[float]) -> list[str]:
+    """Build CSV row lines for one date, hour-ending 1 to 24, given 24 load
+    values indexed 0..23 (load_values[0] is hour 1, load_values[23] is hour 24)."""
+    lines = []
+    for h in range(1, 25):
+        lines.append(f"{date_str},{h},{load_values[h - 1]}")
+    return lines
+
+
+def test_hour_ending_file_is_accepted_and_maps_to_zero_based():
+    loads = [100.0 + h for h in range(1, 25)]  # hour 1 -> 101, hour 24 -> 124
+    content = _csv("date,hour,load_mw", _rows_ending("2026-01-10", loads))
+    result = read_day_profiles(io.StringIO(content), origin="test")
+    assert result.hour_convention == "hour-ending-1-24"
+    assert result.days[0].hourly_load_mw[0] == 101.0
+    assert result.days[0].hourly_load_mw[23] == 124.0
+
+
+def test_hour_beginning_file_still_works():
+    content = _csv("date,hour,load_mw", _rows("2026-01-10", _flat_load()))
+    result = read_day_profiles(io.StringIO(content), origin="test")
+    assert result.hour_convention == "hour-beginning-0-23"
+
+
+def test_mixed_conventions_rejected():
+    day_one = _rows("2026-01-10", _flat_load())
+    day_two = _rows_ending("2026-01-11", _flat_load())
+    content = _csv("date,hour,load_mw", day_one, day_two)
+    with pytest.raises(ScenarioInputError, match="mixed hour conventions"):
+        read_day_profiles(io.StringIO(content), origin="test")
+
+
+def test_hour_25_rejected():
+    lines = _rows("2026-01-10", _flat_load())
+    parts = lines[0].split(",")
+    parts[1] = "25"
+    lines[0] = ",".join(parts)
+    content = _csv("date,hour,load_mw", lines)
+    with pytest.raises(ScenarioInputError, match="0..24"):
+        read_day_profiles(io.StringIO(content), origin="test")
+
+
+def test_hour_negative_rejected():
+    lines = _rows("2026-01-10", _flat_load())
+    parts = lines[0].split(",")
+    parts[1] = "-1"
+    lines[0] = ",".join(parts)
+    content = _csv("date,hour,load_mw", lines)
+    with pytest.raises(ScenarioInputError, match="0..24"):
+        read_day_profiles(io.StringIO(content), origin="test")
+
+
+def test_duplicate_hour_still_rejected_under_hour_ending():
+    lines = _rows_ending("2026-01-10", _flat_load())
+    lines.append(lines[0])  # duplicate hour 1
+    content = _csv("date,hour,load_mw", lines)
+    with pytest.raises(ScenarioInputError, match="duplicate"):
+        read_day_profiles(io.StringIO(content), origin="test")
+
+
+def test_hour_convention_reported_on_the_day_profile_set():
+    beginning = read_day_profiles(
+        io.StringIO(_csv("date,hour,load_mw", _rows("2026-01-10", _flat_load()))),
+        origin="test",
+    )
+    ending = read_day_profiles(
+        io.StringIO(_csv("date,hour,load_mw", _rows_ending("2026-01-10", _flat_load()))),
+        origin="test",
+    )
+    assert beginning.hour_convention == "hour-beginning-0-23"
+    assert ending.hour_convention == "hour-ending-1-24"
+
+
+def test_committed_examples_are_hour_beginning():
+    for path in ("examples/real_winter_stress_2026.csv", "examples/synthetic_winter_stress.csv"):
+        with open(path, encoding="utf-8") as f:
+            result = read_day_profiles(f, origin=path)
+        assert result.hour_convention == "hour-beginning-0-23"
