@@ -24,6 +24,8 @@ function:
 | ``recharge_opportunity_mw`` | Component 5 ``recharge_opportunity`` | MWh in source, MW/hr here |
 | ``equivalent_full_cycles`` | ``annual_equivalent_full_cycles`` | cycle |
 | ``estimated_capital_cost_usd`` / ``cost_per_equivalent_full_cycle_usd`` | capital cost | USD |
+| ``stress_window_effectiveness_fraction`` | Metric Thresholds ``SWE`` | fraction |
+| ``capacity_margin_deficit_reduction_percent`` | Metric Thresholds ``CMDR`` | % |
 
 Open questions this module carries (same identifiers the CLI's ``open_questions``
 block uses):
@@ -43,12 +45,19 @@ block uses):
    supply, which reads as fossil generation remaining, while the name reads as
    fossil generation displaced. The source also does not define
    ``total_generation(t)``.
-5. ``stress_window_effectiveness_numerator``. Not implemented. Does
-   ``charge_dispatched(t)`` mean the charge leg or the discharge leg? See
+5. ``stress_window_effectiveness_numerator``. Implemented as the discharge leg
+   (D5); two sources agree; confirm with the team. Component 7 writes
+   ``charge_dispatched(t)``; the Overview Metrics tab and the Metric Thresholds
+   PDF both write ``capacity_dispatched(t)`` for the same series, and both name
+   the discharge leg. See
    ``docs/archive/plans/PLAN_METRICS_COMPONENT7.md`` section 1.
 6. ``capital_cost_constants``. No source value exists for
    ``est_transmission_cost_per_mile``, ``est_storage_unit_cost`` or
    ``solution_lifetime``; see ``config.py``.
+7. ``cmdr_scalar_aggregation``. CMDR aggregates as a ratio of sums over the
+   event's stressed hours (D6), matching the Metric Thresholds PDF's derivation
+   ``4,050 MWh dispatch / 43,200 MWh deficit = 9.4%``. The alternative, a mean
+   of per-hour ratios, gives a different number and no source computes it.
 
 Conventions applying to every Component 7 function below (full detail in
 ``docs/archive/plans/PLAN_METRICS_COMPONENT7.md`` section 2):
@@ -71,6 +80,7 @@ Conventions applying to every Component 7 function below (full detail in
 
 from __future__ import annotations
 
+import math
 from collections.abc import Sequence
 
 
@@ -485,3 +495,92 @@ def cost_per_equivalent_full_cycle_usd(
     _require_positive(annual_equivalent_full_cycles, "annual_equivalent_full_cycles")
     _require_positive(solution_lifetime_years, "solution_lifetime_years")
     return capital_cost_usd / (annual_equivalent_full_cycles * solution_lifetime_years)
+
+
+# --- Metric Thresholds v1.1: SWE and CMDR --------------------------------------
+
+
+def stress_window_effectiveness_fraction(
+    *,
+    capacity_dispatched_mw: Sequence[float],
+    oil_generation_mw: Sequence[float],
+    gas_generation_mw: Sequence[float],
+) -> float:
+    """Storage energy delivered over an event's stressed hours, as a fraction of the
+    fossil generation those hours ran.
+
+    Component 7 writes the numerator ``charge_dispatched(t)``; the Overview
+    Metrics tab and the Metric Thresholds PDF both write ``capacity_dispatched(t)``
+    for the same series (D5a). ``capacity_dispatched_mw[h]`` maps to
+    ``HourlyResult.discharge``, per D5: two sources agree that the SWE numerator
+    is the discharge leg, not the charge leg.
+
+    ``SWE = sum(capacity_dispatched(t)) / sum(oil_generation(t) + gas_generation(t))``,
+    per ``docs/source/2026-08-05_Metric_Thresholds_v1.1.pdf``: "Denominator is
+    fossil fuel generation only ... This makes SWE a direct fossil displacement
+    metric."
+
+    The caller supplies stressed hours only; this function applies no mask of its
+    own. Returns the bare ratio; a reporting layer multiplies by 100.
+    """
+    _require_same_length(
+        capacity_dispatched_mw, oil_generation_mw, "capacity_dispatched_mw", "oil_generation_mw"
+    )
+    _require_same_length(
+        capacity_dispatched_mw, gas_generation_mw, "capacity_dispatched_mw", "gas_generation_mw"
+    )
+    _require_non_negative_series(capacity_dispatched_mw, "capacity_dispatched_mw")
+    _require_non_negative_series(oil_generation_mw, "oil_generation_mw")
+    _require_non_negative_series(gas_generation_mw, "gas_generation_mw")
+    fossil_sum = sum(oil_generation_mw) + sum(gas_generation_mw)
+    if fossil_sum <= 0:
+        raise ValueError("sum(oil_generation_mw) + sum(gas_generation_mw) must be positive")
+    return sum(capacity_dispatched_mw) / fossil_sum
+
+
+def capacity_margin_deficit_reduction_percent(
+    *,
+    capacity_dispatched_mw: Sequence[float],
+    hourly_load_mw: Sequence[float],
+    p90_threshold_mwh: float,
+) -> float | None:
+    """CMDR as the contract-facing percent: the share of the event's capacity
+    deficit that storage removed.
+
+    A stressed hour is ``Load(t) > p90_threshold_mwh``. This function builds
+    that mask itself and gates **both** sums with it (D6)::
+
+        numerator   = sum(max(0.0, capacity_dispatched(t)))  over stressed hours
+        denominator = sum(Load(t) - p90_threshold_mwh)       over stressed hours
+        result      = numerator / denominator * 100
+
+    An hour at or below the threshold contributes nothing to either sum.
+    Crediting dispatch in a non-deficit hour would report a reduction of a
+    deficit that does not exist. OPEN team question ``cmdr_scalar_aggregation``
+    (module docstring): this ratio-of-sums reading matches the Metric
+    Thresholds PDF's derivation, ``4,050 MWh dispatch / 43,200 MWh deficit =
+    9.4%``, over 54 stressed hours. The alternative, a mean of per-hour ratios,
+    gives a different number and no source computes it.
+
+    Returns ``None`` when no hour is stressed. A window with no hour above the
+    threshold has no deficit to reduce, which is physically valid (D10a): a
+    consumer must read ``None`` as "no deficit", not "model failure".
+    """
+    _require_same_length(
+        capacity_dispatched_mw, hourly_load_mw, "capacity_dispatched_mw", "hourly_load_mw"
+    )
+    _require_non_negative_series(capacity_dispatched_mw, "capacity_dispatched_mw")
+    _require_non_negative_series(hourly_load_mw, "hourly_load_mw")
+    if not math.isfinite(p90_threshold_mwh) or p90_threshold_mwh <= 0:
+        raise ValueError("p90_threshold_mwh must be finite and positive")
+    numerator = 0.0
+    denominator = 0.0
+    stressed = False
+    for dispatch, load in zip(capacity_dispatched_mw, hourly_load_mw, strict=True):
+        if load > p90_threshold_mwh:
+            stressed = True
+            numerator += max(0.0, dispatch)
+            denominator += load - p90_threshold_mwh
+    if not stressed:
+        return None
+    return numerator / denominator * 100

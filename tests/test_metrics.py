@@ -8,6 +8,7 @@ from owr.metrics import (
     average_recharge_mismatch_mwh,
     capacity_margin,
     capacity_margin_deficit_reduction_mw,
+    capacity_margin_deficit_reduction_percent,
     capacity_margin_deficit_reduction_series_mw,
     cost_per_equivalent_full_cycle_usd,
     cycle_recharge_mismatch_mwh,
@@ -20,6 +21,7 @@ from owr.metrics import (
     recharge_capacity_mismatch_fraction,
     recharge_opportunity_mw,
     severity_reduction,
+    stress_window_effectiveness_fraction,
 )
 from owr.models import DayProfile, StorageAsset
 from owr.simulator import simulate
@@ -476,4 +478,119 @@ def test_cost_per_equivalent_full_cycle_usd_zero_lifetime_raises():
     with pytest.raises(ValueError):
         cost_per_equivalent_full_cycle_usd(
             25_000_000.0, annual_equivalent_full_cycles=50.0, solution_lifetime_years=0.0
+        )
+
+
+# --- Metric Thresholds v1.1: SWE and CMDR --------------------------------------
+
+
+def test_swe_matches_the_thresholds_pdf_derivation():
+    dispatch = [200.0] * 54
+    oil = [4000.0] * 54
+    gas = [7920.0] * 54
+    result = stress_window_effectiveness_fraction(
+        capacity_dispatched_mw=dispatch, oil_generation_mw=oil, gas_generation_mw=gas
+    )
+    assert result == pytest.approx(0.0168, abs=1e-4)
+
+
+def test_swe_rejects_length_mismatch():
+    with pytest.raises(ValueError):
+        stress_window_effectiveness_fraction(
+            capacity_dispatched_mw=[1.0, 2.0],
+            oil_generation_mw=[1.0],
+            gas_generation_mw=[1.0, 2.0],
+        )
+    with pytest.raises(ValueError):
+        stress_window_effectiveness_fraction(
+            capacity_dispatched_mw=[1.0, 2.0],
+            oil_generation_mw=[1.0, 2.0],
+            gas_generation_mw=[1.0],
+        )
+
+
+def test_swe_rejects_negative_series():
+    with pytest.raises(ValueError):
+        stress_window_effectiveness_fraction(
+            capacity_dispatched_mw=[-1.0], oil_generation_mw=[1.0], gas_generation_mw=[1.0]
+        )
+    with pytest.raises(ValueError):
+        stress_window_effectiveness_fraction(
+            capacity_dispatched_mw=[1.0], oil_generation_mw=[-1.0], gas_generation_mw=[1.0]
+        )
+    with pytest.raises(ValueError):
+        stress_window_effectiveness_fraction(
+            capacity_dispatched_mw=[1.0], oil_generation_mw=[1.0], gas_generation_mw=[-1.0]
+        )
+
+
+def test_swe_raises_when_fossil_sum_is_zero():
+    with pytest.raises(ValueError):
+        stress_window_effectiveness_fraction(
+            capacity_dispatched_mw=[1.0], oil_generation_mw=[0.0], gas_generation_mw=[0.0]
+        )
+
+
+def test_cmdr_percent_matches_the_thresholds_pdf_derivation():
+    load = [19213.0] * 54  # p90 18413 + 800 deficit
+    result = capacity_margin_deficit_reduction_percent(
+        capacity_dispatched_mw=[75.0] * 54, hourly_load_mw=load, p90_threshold_mwh=18413.0
+    )
+    assert result == pytest.approx(9.375, abs=0.05)
+
+    result_200 = capacity_margin_deficit_reduction_percent(
+        capacity_dispatched_mw=[200.0] * 54, hourly_load_mw=load, p90_threshold_mwh=18413.0
+    )
+    assert result_200 == pytest.approx(25.0)
+
+
+def test_cmdr_percent_can_exceed_one_hundred():
+    load = [19213.0] * 54
+    result = capacity_margin_deficit_reduction_percent(
+        capacity_dispatched_mw=[921.0] * 54, hourly_load_mw=load, p90_threshold_mwh=18413.0
+    )
+    assert result == pytest.approx(115.1, abs=0.1)
+    assert result > 100.0
+
+
+def test_cmdr_percent_returns_none_when_no_hour_is_stressed():
+    result = capacity_margin_deficit_reduction_percent(
+        capacity_dispatched_mw=[75.0] * 24,
+        hourly_load_mw=[18000.0] * 24,
+        p90_threshold_mwh=18413.0,
+    )
+    assert result is None
+
+
+def test_unstressed_hours_are_excluded_from_both_sums():
+    single = capacity_margin_deficit_reduction_percent(
+        capacity_dispatched_mw=[75.0],
+        hourly_load_mw=[18413.0 + 800.0],
+        p90_threshold_mwh=18413.0,
+    )
+    mixed = capacity_margin_deficit_reduction_percent(
+        capacity_dispatched_mw=[75.0, 1000.0],
+        hourly_load_mw=[18413.0 + 800.0, 18413.0 - 800.0],
+        p90_threshold_mwh=18413.0,
+    )
+    assert mixed == pytest.approx(single)
+
+
+def test_cmdr_percent_hour_exactly_at_the_threshold_is_not_stressed():
+    result = capacity_margin_deficit_reduction_percent(
+        capacity_dispatched_mw=[1000.0],
+        hourly_load_mw=[18413.0],
+        p90_threshold_mwh=18413.0,
+    )
+    assert result is None
+
+
+def test_cmdr_percent_rejects_non_positive_threshold():
+    with pytest.raises(ValueError):
+        capacity_margin_deficit_reduction_percent(
+            capacity_dispatched_mw=[1.0], hourly_load_mw=[1.0], p90_threshold_mwh=0.0
+        )
+    with pytest.raises(ValueError):
+        capacity_margin_deficit_reduction_percent(
+            capacity_dispatched_mw=[1.0], hourly_load_mw=[1.0], p90_threshold_mwh=-1.0
         )
