@@ -129,7 +129,7 @@ class SweepResult:
 
     def frame(self) -> pd.DataFrame:
         """The sweep result table, one row per size, in ladder order. Every
-        column carries an explicit ``float64`` dtype, mirroring
+        column carries an explicit ``float64`` dtype, matching the dtype discipline of
         ``SimulationResult.hourly_frame``."""
         return pd.DataFrame(
             {

@@ -412,31 +412,35 @@ def _run(args: argparse.Namespace) -> int:
             raise ValueError(
                 "--window requires at least one detected stress window, but none were found"
             )
-        n = args.window
-        if n > len(windows):
-            raise ValueError(f"--window {n} out of range: {len(windows)} window(s) detected")
-        selected = windows[n - 1]
+        window_index = args.window
+        if window_index > len(windows):
+            raise ValueError(
+                f"--window {window_index} out of range: {len(windows)} window(s) detected"
+            )
+        selected = windows[window_index - 1]
         dates = [d.date for d in days]
-        w0 = dates.index(selected.start)
-        w1 = dates.index(selected.end)
-        span = days[w0 : w1 + 1]
-        lead_start = max(0, w0 - args.lead_days)
-        lead = days[lead_start:w0]
+        first_day_idx = dates.index(selected.start)
+        last_day_idx = dates.index(selected.end)
+        span = days[first_day_idx : last_day_idx + 1]
+        lead_start = max(0, first_day_idx - args.lead_days)
+        lead = days[lead_start:first_day_idx]
         if len(lead) < args.lead_days:
             shortfall_note = (
-                f"only {len(lead)} lead day(s) available before window {n}; "
+                f"only {len(lead)} lead day(s) available before window {window_index}; "
                 f"requested {args.lead_days}"
             )
-        window_label = n
+        window_label = window_index
 
-    s0 = args.start_soc_mwh if args.start_soc_mwh is not None else asset.total_mwh
-    if not 0 <= s0 <= asset.total_mwh:
-        raise ValueError(f"--start-soc-mwh must be within [0, {asset.total_mwh}], got {s0}")
+    initial_soc_mwh = args.start_soc_mwh if args.start_soc_mwh is not None else asset.total_mwh
+    if not 0 <= initial_soc_mwh <= asset.total_mwh:
+        raise ValueError(
+            f"--start-soc-mwh must be within [0, {asset.total_mwh}], got {initial_soc_mwh}"
+        )
 
     if shortfall_note:
         print(f"warning: {shortfall_note}", file=sys.stderr)
 
-    soc_at_start = charge_from_wind(s0, lead, asset) if lead else s0
+    soc_at_start = charge_from_wind(initial_soc_mwh, lead, asset) if lead else initial_soc_mwh
 
     result = simulate(
         asset,
@@ -456,7 +460,7 @@ def _run(args: argparse.Namespace) -> int:
         span=span,
         window_label=window_label,
         lead_days_used=len(lead),
-        s0=s0,
+        initial_soc_mwh=initial_soc_mwh,
         soc_at_start=soc_at_start,
         asset=asset,
         cfg=cfg,
@@ -474,9 +478,32 @@ def _severity_reduction(baseline_peak_mw: float, reserve_peak_mw: float) -> floa
     # Duplicated locally rather than imported from owr.metrics/api.app: same guard
     # as api/app.py::_severity_reduction, kept local so the engine's runtime path
     # stays free of anything from the API layer.
+    # TODO: deduplicate. The same rule lives in three places: this copy, the identical
+    # zero guard in api/app.py::_severity_reduction (which then calls
+    # metrics.severity_reduction), and metrics.severity_reduction itself, which raises
+    # ValueError at baseline_peak_mw <= 0 where this returns 0.0. That divergence is
+    # deliberate; tests/test_sweep.py::test_run_sweep_raises_when_baseline_peak_is_zero
+    # names it as D6, so any merge must keep both behaviours.
     if baseline_peak_mw <= 0:
         return 0.0
     return (baseline_peak_mw - reserve_peak_mw) / baseline_peak_mw
+
+
+def _oq(question_id: str, value_used: float | str) -> dict:
+    """One open-question entry for the report.
+
+    ``flags``, ``note`` and ``handoff_ref`` come from ``_OPEN_QUESTIONS_STATIC``, so
+    only the id and the value this run used vary per entry. The key order below is the
+    key order of the JSON output.
+    """
+    static = _OPEN_QUESTIONS_STATIC[question_id]
+    return {
+        "id": question_id,
+        "flags": static["flags"],
+        "value_used": value_used,
+        "note": static["note"],
+        "handoff_ref": static["handoff_ref"],
+    }
 
 
 def _build_report(
@@ -488,7 +515,7 @@ def _build_report(
     span: list[DayProfile],
     window_label: str | int,
     lead_days_used: int,
-    s0: float,
+    initial_soc_mwh: float,
     soc_at_start: float,
     asset: StorageAsset,
     cfg: Config,
@@ -580,68 +607,29 @@ def _build_report(
         )
 
     open_questions = [
-        {
-            "id": "round_trip_efficiency",
-            "flags": _OPEN_QUESTIONS_STATIC["round_trip_efficiency"]["flags"],
-            "value_used": args.efficiency,
-            "note": _OPEN_QUESTIONS_STATIC["round_trip_efficiency"]["note"],
-            "handoff_ref": _OPEN_QUESTIONS_STATIC["round_trip_efficiency"]["handoff_ref"],
-        },
-        {
-            "id": "stress_event_definition",
-            "flags": _OPEN_QUESTIONS_STATIC["stress_event_definition"]["flags"],
-            "value_used": f"{args.severity_percentile} / {args.min_stress_window_days} days",
-            "note": _OPEN_QUESTIONS_STATIC["stress_event_definition"]["note"],
-            "handoff_ref": _OPEN_QUESTIONS_STATIC["stress_event_definition"]["handoff_ref"],
-        },
-        {
-            "id": "stress_window_output_fields",
-            "flags": _OPEN_QUESTIONS_STATIC["stress_window_output_fields"]["flags"],
-            "value_used": "hours 0..24*days-1; peak in MW; threshold as percentile and MWh",
-            "note": _OPEN_QUESTIONS_STATIC["stress_window_output_fields"]["note"],
-            "handoff_ref": _OPEN_QUESTIONS_STATIC["stress_window_output_fields"][
-                "handoff_ref"
-            ],
-        },
-        {
-            "id": "reserve_usage_rules",
-            "flags": _OPEN_QUESTIONS_STATIC["reserve_usage_rules"]["flags"],
-            "value_used": f"{args.soc_floor_frac} + {args.strategic_reserve_frac}",
-            "note": _OPEN_QUESTIONS_STATIC["reserve_usage_rules"]["note"],
-            "handoff_ref": _OPEN_QUESTIONS_STATIC["reserve_usage_rules"]["handoff_ref"],
-        },
-        {
-            "id": "cycles_per_year",
-            "flags": _OPEN_QUESTIONS_STATIC["cycles_per_year"]["flags"],
-            "value_used": args.cycles_per_year if args.cycles_per_year is not None else "unset",
-            "note": _OPEN_QUESTIONS_STATIC["cycles_per_year"]["note"],
-            "handoff_ref": _OPEN_QUESTIONS_STATIC["cycles_per_year"]["handoff_ref"],
-        },
-        {
-            "id": "recharge_opportunity_definition",
-            "flags": _OPEN_QUESTIONS_STATIC["recharge_opportunity_definition"]["flags"],
-            "value_used": "surplus wind after serving net load, before the SoC and power clamps",
-            "note": _OPEN_QUESTIONS_STATIC["recharge_opportunity_definition"]["note"],
-            "handoff_ref": _OPEN_QUESTIONS_STATIC["recharge_opportunity_definition"][
-                "handoff_ref"
-            ],
-        },
-        {
-            "id": "recharge_capacity_denominator",
-            "flags": _OPEN_QUESTIONS_STATIC["recharge_capacity_denominator"]["flags"],
-            "value_used": "total_mwh - min_soc_mwh",
-            "note": _OPEN_QUESTIONS_STATIC["recharge_capacity_denominator"]["note"],
-            "handoff_ref": _OPEN_QUESTIONS_STATIC["recharge_capacity_denominator"][
-                "handoff_ref"
-            ],
-        },
-        {
-            "id": "wind_charge_source",
-            "flags": _OPEN_QUESTIONS_STATIC["wind_charge_source"]["flags"],
-            "value_used": "surplus wind above the hour's net load, charge and pre-charge alike",
-            "note": _OPEN_QUESTIONS_STATIC["wind_charge_source"]["note"],
-            "handoff_ref": _OPEN_QUESTIONS_STATIC["wind_charge_source"]["handoff_ref"],
-        },
+        _oq("round_trip_efficiency", args.efficiency),
+        _oq(
+            "stress_event_definition",
+            f"{args.severity_percentile} / {args.min_stress_window_days} days",
+        ),
+        _oq(
+            "stress_window_output_fields",
+            "hours 0..24*days-1; peak in MW; threshold as percentile and MWh",
+        ),
+        _oq("reserve_usage_rules", f"{args.soc_floor_frac} + {args.strategic_reserve_frac}"),
+        _oq(
+            "cycles_per_year",
+            args.cycles_per_year if args.cycles_per_year is not None else "unset",
+        ),
+        _oq(
+            "recharge_opportunity_definition",
+            "surplus wind after serving net load, before the SoC and power clamps",
+        ),
+        _oq("recharge_capacity_denominator", "total_mwh - min_soc_mwh"),
+        _oq(
+            "wind_charge_source",
+            "surplus wind above the hour's net load, charge and pre-charge alike",
+        ),
     ]
 
     return {
@@ -673,7 +661,7 @@ def _build_report(
             "lead_days_used": lead_days_used,
             "date_start": span[0].date.isoformat(),
             "date_end": span[-1].date.isoformat(),
-            "starting_soc_mwh": s0,
+            "starting_soc_mwh": initial_soc_mwh,
             "soc_at_window_start_mwh": soc_at_start,
         },
         "daily": daily_out,

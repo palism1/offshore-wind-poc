@@ -52,16 +52,19 @@ def allocate_discharge(
     peak_sum = sum(peak)
     ramp_sum = sum(ramp)
 
-    # Normalize each signal to a shape (sums to 1), then blend by the weights.
+    # Each signal is divided by its own sum so the two carry equal total weight.
+    # Without that step the signal with the larger raw magnitude would claim most of
+    # the budget, whatever peak_weight and smooth_weight say.
     peak_shape = [p / peak_sum if peak_sum > 0 else 0.0 for p in peak]
     ramp_shape = [r / ramp_sum if ramp_sum > 0 else 0.0 for r in ramp]
     total_weight = peak_weight + smooth_weight
-    pw = peak_weight / total_weight if total_weight > 0 else 0.5
-    sw = smooth_weight / total_weight if total_weight > 0 else 0.5
+    peak_weight_norm = peak_weight / total_weight if total_weight > 0 else 0.5
+    smooth_weight_norm = smooth_weight / total_weight if total_weight > 0 else 0.5
 
-    # Provisional per-hour split of the budget.
-    d_peak = [budget_mwh * pw * s for s in peak_shape]
-    d_smooth = [budget_mwh * sw * s for s in ramp_shape]
+    # Provisional per-hour split: the power-cap clip below can scale any hour of it
+    # down, so these are targets, not the values this function returns.
+    d_peak = [budget_mwh * peak_weight_norm * s for s in peak_shape]
+    d_smooth = [budget_mwh * smooth_weight_norm * s for s in ramp_shape]
     total = [p + s for p, s in zip(d_peak, d_smooth, strict=True)]
 
     # Enforce the per-hour power cap; redistribute the spilled energy proportionally

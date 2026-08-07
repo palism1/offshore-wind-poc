@@ -17,7 +17,6 @@ These are the values that evolve during the simulation loop. None of them are na
 | `reserve_peak` | `float` | Running maximum of `h.net_load` over all simulated hours | Once per hour |
 | `priorities` | `list[float]` | Pre-computed priority score for each window day | Never after construction |
 | `daily` | `list[DailyResult]` | Output accumulator — one frozen record appended per day | Once per day |
-| `discharged_today` | `float` | Accumulated discharge for the current day | Once per hour — **dead variable: computed but never read after the inner loop** |
 
 `soc` is the simulation's entire evolving state. Everything else in the local scope is either a pre-computed input, a running aggregation for the output, or an output accumulator.
 
@@ -125,7 +124,6 @@ graph TD
         BP["baseline_peak: float"]
         RP["reserve_peak: float"]
         PRI["priorities: list[float]\n(read-only after init)"]
-        DT["discharged_today: float\n(dead variable)"]
         ACC["daily: list[DailyResult]\n(accumulator)"]
     end
 
@@ -172,7 +170,6 @@ Both values are the maximum of a field over all `HourlyResult` records. They are
 | `soc` (local) | Yes | Core simulation variable; advances every step |
 | `baseline_peak`, `reserve_peak` (local) | Yes | Running max trackers |
 | `daily` list (local) | Yes | Accumulator; each element is frozen |
-| `discharged_today` (local) | Yes | Computed but unused (dead variable) |
 | `HourlyResult` | No (frozen) | Immutable snapshot |
 | `DailyResult` | No (frozen) | Immutable snapshot |
 | `SimulationResult` | **Technically yes** (not frozen) | API layer mutates it post-creation |
@@ -323,9 +320,9 @@ RunRecord
 
 ### T5 — The `discharged_today` dead variable
 
-`discharged_today` is computed in the inner hourly loop (`discharged_today += discharge`) but never read after the loop closes. It was likely intended for one of two uses: (1) as an input to `recharge_sufficiency_ratio` (which actually uses `sum(h.charge for h in hourly)`, not discharge), or (2) as a `discharged_mwh` field on `DailyResult`.
+The dead `discharged_today` accumulator has been removed from the inner hourly loop. The proposal below stays open and is out of scope for this pass.
 
-**Tradeoff:** Adding `discharged_mwh` to `DailyResult` eliminates the `sum(h.discharge for h in d.hourly)` expressions in `cli._build_report` and `sweep.run_sweep` (both currently re-compute it). This is the natural destination for the dead variable: it should become a stored field on `DailyResult`, populated from `discharged_today`. The corresponding `charged_mwh` field (currently `sum(h.charge for h in d.hourly)`) would be symmetric. **Recommendation: add `discharged_mwh` and `charged_mwh` to `DailyResult`; remove the dead variable.**
+**Tradeoff:** Adding `discharged_mwh` to `DailyResult` would eliminate the `sum(h.discharge for h in d.hourly)` expressions in `cli._build_report` and `sweep.run_sweep` (both currently re-compute it). The corresponding `charged_mwh` field (currently `sum(h.charge for h in d.hourly)`) would be symmetric. **Recommendation: add `discharged_mwh` and `charged_mwh` to `DailyResult`.**
 
 ---
 

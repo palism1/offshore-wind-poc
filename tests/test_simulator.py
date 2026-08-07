@@ -230,6 +230,16 @@ def test_capacity_margin_is_nan_and_float64_when_unset():
     assert frame["capacity_margin"].isna().all()
 
 
+def test_hourly_frame_dtypes_match_the_declared_schema():
+    asset, window = _two_day_asset_and_window()
+    result = simulate(asset, window, starting_soc=asset.total_mwh, available_capacity_mw=13000.0)
+    frame = result.hourly_frame()
+    assert frame["date"].dtype == object
+    assert frame["ts_hour"].dtype == "int64"
+    for column in HOURLY_FRAME_COLUMNS[2:]:
+        assert frame[column].dtype == "float64", column
+
+
 def test_daily_frame_columns_and_nan_ratio():
     asset, window = _two_day_asset_and_window()
     result = simulate(asset, window, starting_soc=asset.total_mwh, available_capacity_mw=13000.0)

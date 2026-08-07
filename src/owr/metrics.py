@@ -280,8 +280,8 @@ def cycle_recharge_mismatch_mwh(
 
     - ``simulate()`` runs one span per call. When the CLI caller selects a
       detected window with ``--window N``, the span is exactly that window
-      (``cli.py`` slices ``days[w0:w1+1]``), so the result is one event's
-      mismatch.
+      (``cli.py`` slices ``days[first_day_idx : last_day_idx + 1]``), so the result
+      is one event's mismatch.
     - Under the CLI default ``--window all``, the span is every file day after
       the lead days, so the result covers non-stress days too. The CLI reports
       this as a **span** total (``span_recharge_mismatch_mwh``) and labels it as

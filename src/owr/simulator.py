@@ -33,6 +33,15 @@ DAILY_FRAME_COLUMNS: tuple[str, ...] = (
     "date", "budget", "priority", "usable_energy", "recharge_sufficiency_ratio",
 )
 
+# Every hourly column is float64 except the two named below. The map is derived from
+# HOURLY_FRAME_COLUMNS so the schema keeps one source of truth. The dtypes must stay
+# explicit: pandas infers ``object`` for an all-``None`` capacity_margin column and for
+# every column of an empty frame (measurement M16).
+_HOURLY_FRAME_DTYPES: dict[str, str] = {
+    column: {"date": "object", "ts_hour": "int64"}.get(column, "float64")
+    for column in HOURLY_FRAME_COLUMNS
+}
+
 
 @dataclass
 class SimulationResult:
@@ -75,43 +84,9 @@ class SimulationResult:
         So ``capacity_dispatched(t)`` equals ``discharge(t)`` and equals
         ``gross_load - net_load`` for any later per-event metric (CMDR, SWE, FOP).
         """
-        dates: list = []
-        ts_hour: list = []
-        soc: list = []
-        charge: list = []
-        discharge: list = []
-        discharge_peak: list = []
-        discharge_smooth: list = []
-        gross_load: list = []
-        net_load: list = []
-        capacity_margin: list = []
-        for day in self.daily:
-            for hr in day.hourly:
-                dates.append(day.date)
-                ts_hour.append(hr.ts_hour)
-                soc.append(hr.soc)
-                charge.append(hr.charge)
-                discharge.append(hr.discharge)
-                discharge_peak.append(hr.discharge_peak)
-                discharge_smooth.append(hr.discharge_smooth)
-                gross_load.append(hr.gross_load)
-                net_load.append(hr.net_load)
-                capacity_margin.append(hr.capacity_margin)
-        return pd.DataFrame(
-            {
-                "date": pd.Series(dates, dtype="object"),
-                "ts_hour": pd.Series(ts_hour, dtype="int64"),
-                "soc": pd.Series(soc, dtype="float64"),
-                "charge": pd.Series(charge, dtype="float64"),
-                "discharge": pd.Series(discharge, dtype="float64"),
-                "discharge_peak": pd.Series(discharge_peak, dtype="float64"),
-                "discharge_smooth": pd.Series(discharge_smooth, dtype="float64"),
-                "gross_load": pd.Series(gross_load, dtype="float64"),
-                "net_load": pd.Series(net_load, dtype="float64"),
-                "capacity_margin": pd.Series(capacity_margin, dtype="float64"),
-            },
-            columns=list(HOURLY_FRAME_COLUMNS),
-        )
+        rows = [{"date": day.date, **vars(hr)} for day in self.daily for hr in day.hourly]
+        frame = pd.DataFrame(rows, columns=list(HOURLY_FRAME_COLUMNS))
+        return frame.astype(_HOURLY_FRAME_DTYPES)
 
     def daily_frame(self) -> pd.DataFrame:
         """The Component 4 daily result table, one row per simulated day.
@@ -124,14 +99,14 @@ class SimulationResult:
         dates = [day.date for day in self.daily]
         budgets = [day.budget for day in self.daily]
         priorities = [day.priority for day in self.daily]
-        usable_energy_vals = [day.usable_energy for day in self.daily]
+        usable_energies = [day.usable_energy for day in self.daily]
         ratios = [day.recharge_sufficiency_ratio for day in self.daily]
         return pd.DataFrame(
             {
                 "date": pd.Series(dates, dtype="object"),
                 "budget": pd.Series(budgets, dtype="float64"),
                 "priority": pd.Series(priorities, dtype="float64"),
-                "usable_energy": pd.Series(usable_energy_vals, dtype="float64"),
+                "usable_energy": pd.Series(usable_energies, dtype="float64"),
                 "recharge_sufficiency_ratio": pd.Series(ratios, dtype="float64"),
             },
             columns=list(DAILY_FRAME_COLUMNS),
@@ -173,23 +148,24 @@ def simulate(
 
         load = list(day.hourly_load_mw)
         wind = list(day.hourly_wind_mw) if day.hourly_wind_mw else [0.0] * HOURS_PER_DAY
-        d_total, d_peak, d_smooth = dispatch_mod.allocate_discharge(
-            load, day_budget, asset.power_mw, peak_weight, smooth_weight
+        hourly_discharge, hourly_discharge_peak, hourly_discharge_smooth = (
+            dispatch_mod.allocate_discharge(
+                load, day_budget, asset.power_mw, peak_weight, smooth_weight
+            )
         )
 
         hourly: list[HourlyResult] = []
-        discharged_today = 0.0
         for h in range(HOURS_PER_DAY):
             # Discharge, clamped again against the live SoC (budget is an energy cap,
             # but SoC must never cross the reserve floor within the day).
-            discharge = clamp_discharge(soc, d_total[h], asset)
+            discharge = clamp_discharge(soc, hourly_discharge[h], asset)
             # Scale the peak/smooth split to the actually-delivered discharge.
-            ratio = discharge / d_total[h] if d_total[h] > 0 else 0.0
-            dp, ds = d_peak[h] * ratio, d_smooth[h] * ratio
+            ratio = discharge / hourly_discharge[h] if hourly_discharge[h] > 0 else 0.0
+            discharge_peak_scaled = hourly_discharge_peak[h] * ratio
+            discharge_smooth_scaled = hourly_discharge_smooth[h] * ratio
             soc = next_soc(
                 soc, charge=0.0, discharge=discharge, one_way_efficiency=asset.one_way_efficiency
             )
-            discharged_today += discharge
 
             # Off-peak recharge: any wind above this hour's (already reduced) net load
             # tops the reserve back up, capped by headroom and power.
@@ -219,8 +195,8 @@ def simulate(
                     soc=soc,
                     charge=charge,
                     discharge=discharge,
-                    discharge_peak=dp,
-                    discharge_smooth=ds,
+                    discharge_peak=discharge_peak_scaled,
+                    discharge_smooth=discharge_smooth_scaled,
                     gross_load=load[h],
                     net_load=net_load_mw,
                     capacity_margin=margin,
