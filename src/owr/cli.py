@@ -394,7 +394,7 @@ def cmd_run(args: argparse.Namespace) -> int:
 
 def _run(args: argparse.Namespace) -> int:
     if args.input == "-":
-        day_set = scenario_input.read_day_profiles(
+        day_set = scenario_input.load_day_profiles(
             sys.stdin, origin="<stdin>", wind_multiplier=args.wind_multiplier
         )
     else:
@@ -403,7 +403,7 @@ def _run(args: argparse.Namespace) -> int:
         except OSError as exc:
             raise ValueError(f"cannot open input file: {exc}") from exc
         try:
-            day_set = scenario_input.read_day_profiles(
+            day_set = scenario_input.load_day_profiles(
                 stream, origin=args.input, wind_multiplier=args.wind_multiplier
             )
         finally:
@@ -826,8 +826,8 @@ def _render_table(report: dict, args: argparse.Namespace, out: TextIO) -> None:
     out.write(
         f"  days read            {inp['days_read']}  ({inp['date_start']} .. {inp['date_end']})\n"
     )
-    if inp["demand_percentile_source"] == "derived-rank":
-        out.write("  demand percentile    derived from series rank (column absent)\n")
+    if inp["demand_percentile_source"] == "stamped-at-detection":
+        out.write("  demand percentile    stamped at detection (column absent)\n")
     else:
         out.write("  demand percentile    read from file\n")
     out.write(f"  hour convention      {inp['hour_convention']}\n")

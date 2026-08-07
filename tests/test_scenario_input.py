@@ -110,21 +110,19 @@ def test_per_day_scalars_read_from_file():
     assert result.days[0].wind_forecast_frac == 0.3
 
 
-def test_demand_percentile_absent_is_derived_via_ecdf():
-    # 3 days with distinct daily totals -> exact expected ranks.
+def test_absent_demand_percentile_is_left_unset_and_reported():
+    # Phase 6: read_day_profiles no longer derives a percentile. The column
+    # absent leaves the DayProfile default 0.0; stamping is load_day_profiles's
+    # job (stress_finder.with_demand_percentile), tested separately.
     days = [
-        _rows("2026-01-10", _flat_load(1000.0)),  # smallest total
-        _rows("2026-01-11", _flat_load(2000.0)),  # middle total
-        _rows("2026-01-12", _flat_load(3000.0)),  # largest total
+        _rows("2026-01-10", _flat_load(1000.0)),
+        _rows("2026-01-11", _flat_load(2000.0)),
+        _rows("2026-01-12", _flat_load(3000.0)),
     ]
     content = _csv("date,hour,load_mw", *days)
     result = read_day_profiles(io.StringIO(content), origin="test")
-    assert result.demand_percentile_source == "derived-rank"
-    assert any("demand_percentile" in w for w in result.warnings)
-    got = {d.date: d.demand_percentile for d in result.days}
-    assert got[date(2026, 1, 10)] == pytest.approx(1 / 3)
-    assert got[date(2026, 1, 11)] == pytest.approx(2 / 3)
-    assert got[date(2026, 1, 12)] == pytest.approx(3 / 3)
+    assert result.demand_percentile_source == "absent"
+    assert all(d.demand_percentile == 0.0 for d in result.days)
 
 
 def test_wind_forecast_frac_absent_defaults_to_zero():

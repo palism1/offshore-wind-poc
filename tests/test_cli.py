@@ -14,7 +14,7 @@ from owr import cli
 from owr.config import DEFAULT_CONFIG
 from owr.initial_soc import charge_from_wind
 from owr.models import StorageAsset
-from owr.scenario_input import read_day_profiles
+from owr.scenario_input import load_day_profiles, read_day_profiles
 from owr.simulator import simulate
 from owr.stress_finder import find_stress_windows
 from owr.version import code_version
@@ -250,8 +250,11 @@ def _report(extra_args: list[str]) -> dict:
 
 
 def test_json_summary_matches_direct_simulate_call():
+    # load_day_profiles, not read_day_profiles: the CLI stamps demand_percentile
+    # at detection (Phase 6), so a direct call must go through the same
+    # boundary or the two paths stop comparing the same days.
     with open(EXAMPLE, encoding="utf-8") as f:
-        day_set = read_day_profiles(f, origin=EXAMPLE)
+        day_set = load_day_profiles(f, origin=EXAMPLE)
     asset = StorageAsset(total_mwh=20000.0, power_mw=2000.0)
     result = simulate(asset, day_set.days, starting_soc=asset.total_mwh)
 
@@ -260,6 +263,15 @@ def test_json_summary_matches_direct_simulate_call():
     assert summary["baseline_peak_mw"] == pytest.approx(result.baseline_peak_mw)
     assert summary["reserve_peak_mw"] == pytest.approx(result.reserve_peak_mw)
     assert summary["final_soc"] == pytest.approx(result.final_soc)
+
+
+def test_demand_percentile_is_stamped_when_the_column_is_absent():
+    # EXAMPLE (synthetic_winter_stress.csv) carries no demand_percentile column,
+    # so the CLI must go through load_day_profiles and stamp one at detection
+    # (Phase 6), not leave every day's priority at zero (R2).
+    report = _report([])
+    assert report["input"]["demand_percentile_source"] == "stamped-at-detection"
+    assert any(d["priority"] > 0 for d in report["daily"])
 
 
 def test_wind_multiplier_flag_reaches_the_report():

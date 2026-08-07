@@ -95,6 +95,37 @@ def test_transform_no_longer_not_implemented(tmp_path, capsys):
     assert code == 0
 
 
+def test_transform_reports_population_pending_below_five_winters(tmp_path, capsys):
+    path = tmp_path / "load.csv"
+    winter_dates = [f"2023-01-{d:02d}" for d in range(1, 4)]
+    _write_fixture(path, winter_dates, {d: 1000.0 for d in winter_dates})
+
+    code, _ = _run(["transform", "--input", str(path)])
+    out = capsys.readouterr().out
+    assert code == 0
+    assert "population covers 1 winter(s); the 5-winter pooled value is pending data" in out
+
+    code, _ = _run(["transform", "--input", str(path), "--format", "json"])
+    payload = json.loads(capsys.readouterr().out)
+    assert code == 0
+    assert payload["population_winters"] == 1
+    assert payload["population_pending"] is True
+
+
+def test_transform_csv_carries_load_percentile(tmp_path, capsys):
+    in_path = tmp_path / "load.csv"
+    out_path = tmp_path / "daily.csv"
+    winter_dates = [f"2023-01-{d:02d}" for d in range(1, 4)]
+    _write_fixture(in_path, winter_dates, {d: 1000.0 for d in winter_dates})
+
+    code, _ = _run(["transform", "--input", str(in_path), "--out", str(out_path)])
+    capsys.readouterr()
+    assert code == 0
+
+    header = out_path.read_text().splitlines()[0]
+    assert header.endswith("load_percentile")
+
+
 # --------------------------------------------------------------------------- #
 # Multiple inputs pooled                                                       #
 # --------------------------------------------------------------------------- #
@@ -404,7 +435,8 @@ def test_transform_out_writes_daily_csv(tmp_path, capsys):
     assert out_path.exists()
     header = out_path.read_text().splitlines()[0]
     assert header == (
-        "date,load_mwh,hours_covered,expected_hours,intervals,complete,season,winter_label"
+        "date,load_mwh,hours_covered,expected_hours,intervals,complete,season,"
+        "winter_label,load_percentile"
     )
     lines = out_path.read_text().splitlines()
     assert len(lines) == 1 + len(dates)
@@ -426,10 +458,11 @@ def test_transform_out_daily_csv_is_byte_identical_to_the_expected_text(tmp_path
 
     assert code == 0
     expected = (
-        b"date,load_mwh,hours_covered,expected_hours,intervals,complete,season,winter_label\r\n"
-        b"2023-01-01,24000.0,24.0,24.0,24,True,winter,2022/23\r\n"
-        b"2023-01-02,24000.0,24.0,24.0,24,True,winter,2022/23\r\n"
-        b"2023-01-03,24000.0,24.0,24.0,24,True,winter,2022/23\r\n"
+        b"date,load_mwh,hours_covered,expected_hours,intervals,complete,season,"
+        b"winter_label,load_percentile\r\n"
+        b"2023-01-01,24000.0,24.0,24.0,24,True,winter,2022/23,100.0\r\n"
+        b"2023-01-02,24000.0,24.0,24.0,24,True,winter,2022/23,100.0\r\n"
+        b"2023-01-03,24000.0,24.0,24.0,24,True,winter,2022/23,100.0\r\n"
     )
     assert out_path.read_bytes() == expected
 

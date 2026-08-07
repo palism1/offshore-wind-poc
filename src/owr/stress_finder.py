@@ -12,7 +12,7 @@ from datetime import timedelta
 
 import numpy as np
 
-from owr.models import DailyLoadLike, HourlyLoadLike, StressWindow
+from owr.models import DailyLoadLike, DayProfile, HourlyLoadLike, StressWindow
 
 
 def percentile_threshold(values: Sequence[float], percentile: float) -> float:
@@ -41,6 +41,42 @@ def percentile_threshold(values: Sequence[float], percentile: float) -> float:
     if not 0.0 <= percentile <= 1.0:
         raise ValueError("percentile must be in [0, 1]")
     return float(np.quantile(np.asarray(values, dtype=float), percentile, method="linear"))
+
+
+def _rank_fraction(population_mwh: Sequence[float], value_mwh: float) -> float:
+    if not population_mwh:
+        raise ValueError("percentile_rank_percent: population_mwh is empty")
+    n = len(population_mwh)
+    return sum(1 for p in population_mwh if p <= value_mwh) / n
+
+
+def percentile_rank_percent(population_mwh: Sequence[float], value_mwh: float) -> float:
+    """Empirical rank of one day total against a population, in percent 0 to 100.
+
+    ``rank = count(p <= value) / len(population) * 100``. Ties take the highest
+    rank. Raises ``ValueError`` on an empty population. Mirrors
+    ``owr.etl.demo_profile.percentile_ranks``; the drift guard is
+    ``tests/test_stress_finder.py::test_percentile_rank_matches_demo_profile``.
+    """
+    return _rank_fraction(population_mwh, value_mwh) * 100.0
+
+
+def with_demand_percentile(
+    days: Sequence[DayProfile],
+    *,
+    population_mwh: Sequence[float] | None = None,
+) -> list[DayProfile]:
+    """Return copies of ``days`` carrying ``demand_percentile`` as a fraction 0 to 1.
+
+    Component 3 attaches the percentile at Stress Event Detection, not at input
+    parsing. ``population_mwh`` defaults to the day totals of ``days`` itself,
+    which is the single-file fallback. The pooled five-winter population reaches
+    this function through its caller. Never mutates its input, mirroring
+    ``with_peak_hourly_load``.
+    """
+    if population_mwh is None:
+        population_mwh = [d.load_mwh for d in days]
+    return [replace(d, demand_percentile=_rank_fraction(population_mwh, d.load_mwh)) for d in days]
 
 
 def find_stress_windows_at_threshold(

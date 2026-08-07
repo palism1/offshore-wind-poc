@@ -26,13 +26,16 @@ from dataclasses import dataclass
 from datetime import date
 from typing import NamedTuple
 
+import numpy as np
 import pandas as pd
 
 from owr.etl.daily import DAILY_CORE_COLUMNS
 from owr.etl.seasons import Season, season_for, winter_label
 from owr.stress_finder import find_stress_windows_at_threshold, percentile_threshold
 
-DAILY_FRAME_COLUMNS: tuple[str, ...] = DAILY_CORE_COLUMNS + ("season", "winter_label")
+DAILY_FRAME_COLUMNS: tuple[str, ...] = DAILY_CORE_COLUMNS + (
+    "season", "winter_label", "load_percentile",
+)
 
 EVENT_FRAME_COLUMNS: tuple[str, ...] = (
     "winter_label", "event_start_date", "event_end_date", "event_duration_days",
@@ -112,6 +115,35 @@ def compute_threshold(
         median_mwh=percentile_threshold(values, 0.5),
         max_mwh=float(values.max()),
     )
+
+
+def with_load_percentile(daily: pd.DataFrame, *, season: Season) -> pd.DataFrame:
+    """Return a new frame carrying ``load_percentile``, in percent 0 to 100 (D3).
+
+    The population is every complete day of ``season`` in ``daily``, pooled
+    across however many winters (or other-season years) the frame spans (D4),
+    the same population ``compute_threshold`` uses. Out-of-season and
+    incomplete days get ``NaN``. Component 2 data contract: ``load_percentile |
+    % | Pre-processed 5-winters percentile of daily load``.
+
+    ``rank = count(p <= v) / n * 100``, matching
+    ``owr.stress_finder.percentile_rank_percent``. Ties take the highest rank.
+    Never mutates its input; raises ``ValueError`` with
+    :func:`compute_threshold`'s message when the season has no complete days.
+    """
+    out = daily.copy()
+    population_mask = (out["season"] == season.value) & out["complete"]
+    pop_values = out.loc[population_mask, "load_mwh"].to_numpy()
+    if pop_values.size == 0:
+        raise ValueError(f"no complete {season} days in the input population")
+
+    n = pop_values.size
+    load_percentile = pd.Series(np.nan, index=out.index, dtype="float64")
+    values = out.loc[population_mask, "load_mwh"].to_numpy()
+    ranks = (pop_values[None, :] <= values[:, None]).sum(axis=1) / n * 100.0
+    load_percentile.loc[population_mask] = ranks
+    out["load_percentile"] = load_percentile
+    return out
 
 
 class _DailyPoint(NamedTuple):

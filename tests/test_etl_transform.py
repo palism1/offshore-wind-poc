@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from datetime import date
 
+import pandas as pd
 import pytest
 
 from owr.etl.daily import DailyLoad, daily_frame
@@ -14,6 +15,7 @@ from owr.etl.transform import (
     compute_threshold,
     find_windows_per_winter,
     winter_labels,
+    with_load_percentile,
 )
 from owr.stress_finder import find_stress_windows_at_threshold, percentile_threshold
 
@@ -178,3 +180,47 @@ def test_winter_labels_includes_a_winter_with_no_complete_day():
     labels = winter_labels(_frame(complete_winter + all_incomplete_winter))
     assert "2021/22" in labels
     assert "2022/23" in labels
+
+
+# --------------------------------------------------------------------------- #
+# Phase 6: with_load_percentile
+# --------------------------------------------------------------------------- #
+
+
+def test_with_load_percentile_pools_across_winters():
+    # winter_b's values are all higher than winter_a's, so pooling is visible:
+    # winter_a's max ranks at 50% against the ten-day pooled population, not
+    # 100% against its own five-day winter.
+    winter_a = [_day(date(2021, 12, 1 + i), 10_000.0 + i * 100) for i in range(5)]
+    winter_b = [_day(date(2022, 12, 1 + i), 20_000.0 + i * 100) for i in range(5)]
+    out = with_load_percentile(_frame(winter_a + winter_b), season=Season.WINTER)
+    a_last = out[out["date"] == date(2021, 12, 5)]["load_percentile"].iloc[0]
+    b_last = out[out["date"] == date(2022, 12, 5)]["load_percentile"].iloc[0]
+    assert a_last == pytest.approx(50.0)
+    assert b_last == pytest.approx(100.0)
+
+
+def test_with_load_percentile_marks_excluded_days_nan():
+    days = [_day(date(2021, 12, 1 + i), 100_000.0 + i * 1000) for i in range(5)]
+    summer_day = _day(date(2022, 7, 1), 999_999.0)
+    incomplete_day = _day(date(2021, 12, 6), 500_000.0, complete=False)
+    out = with_load_percentile(_frame(days + [summer_day, incomplete_day]), season=Season.WINTER)
+    summer_row = out[out["date"] == date(2022, 7, 1)]["load_percentile"].iloc[0]
+    incomplete_row = out[out["date"] == date(2021, 12, 6)]["load_percentile"].iloc[0]
+    assert pd.isna(summer_row)
+    assert pd.isna(incomplete_row)
+
+
+def test_with_load_percentile_never_mutates_its_input():
+    days = [_day(date(2021, 12, 1 + i), 100_000.0 + i * 1000) for i in range(5)]
+    frame = _frame(days)
+    before_columns = tuple(frame.columns)
+    with_load_percentile(frame, season=Season.WINTER)
+    assert tuple(frame.columns) == before_columns
+    assert "load_percentile" not in frame.columns
+
+
+def test_with_load_percentile_raises_when_the_season_has_no_complete_days():
+    days = [_day(date(2022, 7, 1 + i), 100_000.0, complete=False) for i in range(3)]
+    with pytest.raises(ValueError, match="no complete winter days"):
+        with_load_percentile(_frame(days), season=Season.WINTER)

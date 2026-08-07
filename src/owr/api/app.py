@@ -29,7 +29,7 @@ from owr.api.store import InMemoryRepository, Repository, RunRecord
 from owr.config import DEFAULT_CONFIG
 from owr.models import DayProfile, StorageAsset, StressWindow
 from owr.simulator import simulate
-from owr.stress_finder import find_stress_windows, with_peak_hourly_load
+from owr.stress_finder import find_stress_windows, with_demand_percentile, with_peak_hourly_load
 from owr.version import code_version
 
 
@@ -209,6 +209,14 @@ def create_app(repo: Repository | None = None) -> FastAPI:
         try:
             run.status = "running"
             days = _day_profiles(body.days, wind_multiplier=inp.wind_generation_multiplier)
+            # OPEN team question (demand_percentile_wire_default): a caller that
+            # genuinely means demand_percentile=0.0 cannot be told from a caller
+            # that omitted the field, because the Pydantic default is 0.0 too.
+            # Stamp only when EVERY day reads 0.0, the same heuristic that
+            # signals "the field was never set" without changing the wire
+            # contract before the demo.
+            if days and all(d.demand_percentile == 0.0 for d in days):
+                days = with_demand_percentile(days)
             asset = _asset(inp)
             run.stress_windows = with_peak_hourly_load(
                 find_stress_windows(days, inp.severity_percentile, inp.min_stress_window_days),

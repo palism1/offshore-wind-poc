@@ -9,11 +9,14 @@ from datetime import date, timedelta
 import numpy
 import pytest
 
+from owr.etl.demo_profile import percentile_ranks
 from owr.models import HOURS_PER_DAY, DayProfile, StressWindow
 from owr.stress_finder import (
     find_stress_windows,
     find_stress_windows_at_threshold,
+    percentile_rank_percent,
     percentile_threshold,
+    with_demand_percentile,
     with_peak_hourly_load,
 )
 
@@ -262,3 +265,52 @@ def test_stress_set_is_unchanged_under_the_new_percentile():
         old = _retired_percentile_threshold(values, percentile)
         new = percentile_threshold(values, percentile)
         assert [v >= old for v in values] == [v >= new for v in values]
+
+
+# --------------------------------------------------------------------------- #
+# Phase 6: percentile at detection (changes 1, 2)
+# --------------------------------------------------------------------------- #
+
+
+def test_percentile_rank_percent_ties_take_the_highest_rank():
+    population = [10.0, 100.0, 100.0, 100.0, 10.0]
+    assert percentile_rank_percent(population, 100.0) == pytest.approx(100.0)
+    assert percentile_rank_percent(population, 10.0) == pytest.approx(40.0)
+
+
+def test_percentile_rank_matches_demo_profile():
+    population = [10.0, 25.0, 25.0, 40.0, 55.0, 70.0]
+    day_totals = {date(2026, 1, i + 1): v for i, v in enumerate(population)}
+    demo = percentile_ranks(population, day_totals)
+    for i, v in enumerate(population):
+        d = date(2026, 1, i + 1)
+        assert percentile_rank_percent(population, v) == pytest.approx(demo[d] * 100.0)
+
+
+def test_percentile_rank_rejects_empty_population():
+    with pytest.raises(ValueError):
+        percentile_rank_percent([], 10.0)
+
+
+def test_with_demand_percentile_never_mutates_its_input():
+    days = [_day(0, 1000.0), _day(1, 2000.0), _day(2, 3000.0)]
+    original = list(days)
+    with_demand_percentile(days)
+    assert days == original
+
+
+def test_with_demand_percentile_uses_the_supplied_population():
+    days = [_day(0, 1000.0), _day(1, 2000.0)]  # load_mwh: 24000, 48000
+    result = with_demand_percentile(
+        days, population_mwh=[24000.0, 48000.0, 72000.0, 96000.0]
+    )
+    assert result[0].demand_percentile == pytest.approx(1 / 4)
+    assert result[1].demand_percentile == pytest.approx(2 / 4)
+
+
+def test_with_demand_percentile_defaults_to_the_series_itself():
+    days = [_day(0, 1000.0), _day(1, 2000.0), _day(2, 3000.0)]
+    result = with_demand_percentile(days)
+    assert result[0].demand_percentile == pytest.approx(1 / 3)
+    assert result[1].demand_percentile == pytest.approx(2 / 3)
+    assert result[2].demand_percentile == pytest.approx(3 / 3)

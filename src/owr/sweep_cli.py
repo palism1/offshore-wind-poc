@@ -228,7 +228,7 @@ def cmd_sweep(args: argparse.Namespace) -> int:
 
 def _run(args: argparse.Namespace) -> int:
     if args.input == "-":
-        day_set = scenario_input.read_day_profiles(
+        day_set = scenario_input.load_day_profiles(
             sys.stdin, origin="<stdin>", wind_multiplier=args.wind_multiplier
         )
     else:
@@ -237,7 +237,7 @@ def _run(args: argparse.Namespace) -> int:
         except OSError as exc:
             raise ValueError(f"cannot open input file: {exc}") from exc
         try:
-            day_set = scenario_input.read_day_profiles(
+            day_set = scenario_input.load_day_profiles(
                 stream, origin=args.input, wind_multiplier=args.wind_multiplier
             )
         finally:

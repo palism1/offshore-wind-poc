@@ -44,6 +44,7 @@ from owr.etl.transform import (
     compute_threshold,
     find_windows_per_winter,
     winter_labels,
+    with_load_percentile,
 )
 
 
@@ -175,6 +176,7 @@ def _run_transform(
     daily = daily_loads_from_readings(readings)
     frame = add_season_columns(daily_frame(daily))
     season = Season(args.season)
+    frame = with_load_percentile(frame, season=season)
     threshold = compute_threshold(frame, percentile=args.percentile, season=season)
     events: pd.DataFrame | None
     labels: tuple[str, ...]
@@ -191,13 +193,38 @@ def _run_transform(
         events = None
         labels = ()
 
+    population_mask = (frame["season"] == season.value) & frame["complete"]
+    if season == Season.WINTER:
+        population_winters = int(frame.loc[population_mask, "winter_label"].nunique())
+    else:
+        population_winters = int(
+            frame.loc[population_mask, "date"].map(lambda d: d.year).nunique()
+        )
+    population_pending = population_winters < DEFAULT_CONFIG.robustness_analysis_years
+
     if args.out:
         _write_daily_csv(args.out, frame)
 
     if args.format == "json":
-        print(json.dumps(_transform_result_json(threshold, events, labels), indent=2))
+        print(
+            json.dumps(
+                _transform_result_json(
+                    threshold,
+                    events,
+                    labels,
+                    population_winters=population_winters,
+                    population_pending=population_pending,
+                ),
+                indent=2,
+            )
+        )
     else:
-        _print_transform_text(threshold, events)
+        _print_transform_text(
+            threshold,
+            events,
+            population_winters=population_winters,
+            population_pending=population_pending,
+        )
     return 0
 
 
@@ -490,7 +517,11 @@ def _write_daily_csv(path: str, frame: pd.DataFrame) -> None:
 
 
 def _print_transform_text(
-    threshold: ThresholdResult, events: pd.DataFrame | None
+    threshold: ThresholdResult,
+    events: pd.DataFrame | None,
+    *,
+    population_winters: int,
+    population_pending: bool,
 ) -> None:
     print(f"etl transform: percentile={threshold.percentile}")
     print(f"  threshold_mwh   = {threshold.threshold_mwh:.3f}")
@@ -500,6 +531,11 @@ def _print_transform_text(
         f"  min/median/max  = {threshold.min_mwh:.3f} / {threshold.median_mwh:.3f} "
         f"/ {threshold.max_mwh:.3f}"
     )
+    if population_pending:
+        print(
+            f"  population covers {population_winters} winter(s); the 5-winter "
+            f"pooled value is pending data"
+        )
 
     excluded = threshold.excluded_incomplete
     if not excluded:
@@ -528,13 +564,20 @@ def _print_transform_text(
 
 
 def _transform_result_json(
-    threshold: ThresholdResult, events: pd.DataFrame | None, labels: tuple[str, ...]
+    threshold: ThresholdResult,
+    events: pd.DataFrame | None,
+    labels: tuple[str, ...],
+    *,
+    population_winters: int,
+    population_pending: bool,
 ) -> dict[str, Any]:
     result: dict[str, Any] = {
         "percentile": threshold.percentile,
         "threshold_mwh": threshold.threshold_mwh,
         "season": threshold.season.value,
         "population_days": threshold.population_days,
+        "population_winters": population_winters,
+        "population_pending": population_pending,
         "min_mwh": threshold.min_mwh,
         "median_mwh": threshold.median_mwh,
         "max_mwh": threshold.max_mwh,
@@ -640,7 +683,8 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         metavar="PATH",
         help="also write the per-day rollup (date, load_mwh, hours_covered, "
-        "expected_hours, intervals, complete, season, winter_label) to this CSV",
+        "expected_hours, intervals, complete, season, winter_label, "
+        "load_percentile) to this CSV",
     )
     transform_p.add_argument(
         "--format",

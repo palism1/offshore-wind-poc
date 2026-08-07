@@ -28,14 +28,16 @@ over. A file that carries both 0 and 24 is rejected: the two conventions cannot
 coexist in one file. ``DayProfileSet.hour_convention`` reports which one a
 parsed file used.
 
-``demand_percentile`` absent is derived as the empirical CDF of the day's energy
-within the supplied series: ``count(load_mwh <= load_mwh(d)) / n_days``. Defaulting
-to 0.0 would make ``priority()`` zero for every day, which hands every day the full
-80% energy-budget cap (see ``owr.budget.daily_budget``); the seasonal-denominator
-definition in the ``DayProfile`` docstring is not usable, since ``docs/HANDOFF.md``
-records the seasonal denominators as underivable and forbids hard-coding them.
-``wind_forecast_frac`` absent defaults to 0.0 (the ``DayProfile`` default): it
-cannot be derived without a wind nameplate capacity, which is not an input.
+``demand_percentile`` absent is left at the ``DayProfile`` default, 0.0, by
+``read_day_profiles`` (Phase 6, change 1/2): Component 3 attaches the percentile
+at Stress Event Detection, not at input parsing, so this pure parser no longer
+derives one. ``load_day_profiles`` below is the boundary every CLI calls
+instead of ``read_day_profiles`` directly: when the column is absent it stamps
+``demand_percentile`` via ``stress_finder.with_demand_percentile``, the
+empirical rank ``count(load_mwh <= load_mwh(d)) / n`` (the same formula the
+retired derivation used). ``wind_forecast_frac`` absent defaults to 0.0 (the
+``DayProfile`` default): it cannot be derived without a wind nameplate
+capacity, which is not an input.
 
 Parsed by ``pandas.read_csv`` with ``dtype=str`` and ``na_filter=False``, so every
 cell reaches the validation below as the token the file carried. Three behaviors
@@ -59,13 +61,14 @@ from __future__ import annotations
 import io
 import math
 import warnings as warnings_mod
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import date, timedelta
 from typing import TextIO
 
 import pandas as pd
 
 from owr.models import HOURS_PER_DAY, DayProfile
+from owr.stress_finder import with_demand_percentile
 
 REQUIRED_COLUMNS = ("date", "hour", "load_mw")
 OPTIONAL_COLUMNS = ("wind_mw", "demand_percentile", "wind_forecast_frac")
@@ -79,7 +82,7 @@ class ScenarioInputError(ValueError):
 @dataclass(frozen=True)
 class DayProfileSet:
     days: list[DayProfile]
-    demand_percentile_source: str  # "file" | "derived-rank"
+    demand_percentile_source: str  # "file" | "absent" | "stamped-at-detection"
     wind_forecast_frac_source: str  # "file" | "default-zero"
     has_wind: bool
     warnings: tuple[str, ...]
@@ -327,25 +330,16 @@ def read_day_profiles(
                 f"{next_d.isoformat()}, a gap of {(next_d - prev_d).days} day(s)",
             )
 
-    # Derive demand_percentile if the column was absent: empirical rank of daily
-    # energy within the series.
-    daily_loads: dict[date, float] = {
-        d: sum(by_date[d][h]["load_mw"] for h in range(HOURS_PER_DAY)) for d in sorted_dates
-    }
-    n_days = len(sorted_dates)
-
     if has_demand_percentile:
         demand_percentile_source = "file"
     else:
-        demand_percentile_source = "derived-rank"
-        warnings.append(
-            "demand_percentile column absent: derived as the empirical rank of each "
-            "day's energy within the supplied series (count(load_mwh <= load_mwh(d)) "
-            "/ n_days)."
-        )
+        # No derivation here (Phase 6): Component 3 attaches demand_percentile
+        # at Stress Event Detection, not at input parsing. Left at the
+        # DayProfile default 0.0; load_day_profiles below is the boundary that
+        # stamps it via stress_finder.with_demand_percentile.
+        demand_percentile_source = "absent"
         for d in sorted_dates:
-            count_le = sum(1 for other in daily_loads.values() if other <= daily_loads[d])
-            per_date_scalar[d]["demand_percentile"] = count_le / n_days
+            per_date_scalar[d]["demand_percentile"] = 0.0
 
     if has_wind_forecast_frac:
         wind_forecast_frac_source = "file"
@@ -385,4 +379,26 @@ def read_day_profiles(
         warnings=tuple(warnings),
         hour_convention=hour_convention,
         wind_multiplier=wind_multiplier,
+    )
+
+
+def load_day_profiles(
+    stream: TextIO, *, origin: str, wind_multiplier: float = 1.0
+) -> DayProfileSet:
+    """Parse a day-profile CSV, then stamp ``demand_percentile`` when the file
+    omits it.
+
+    ``read_day_profiles`` stays the pure parse and never derives a percentile.
+    This wrapper is the boundary every CLI uses, so no consumer can forget the
+    stamping step (review finding B1: two consumers, ``cli.py`` and
+    ``sweep_cli.py``, both must stamp or the sweep path sees every day at
+    percentile 0.0). The formula lives in
+    ``stress_finder.with_demand_percentile``, so Component 3 still owns it.
+    """
+    day_set = read_day_profiles(stream, origin=origin, wind_multiplier=wind_multiplier)
+    if day_set.demand_percentile_source == "file":
+        return day_set
+    stamped_days = with_demand_percentile(day_set.days)
+    return replace(
+        day_set, days=stamped_days, demand_percentile_source="stamped-at-detection"
     )
