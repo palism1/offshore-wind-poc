@@ -476,6 +476,44 @@ def test_demo_profile_end_to_end_with_wind(tmp_path, capsys):
             assert hourly_wind == expected
 
 
+def test_demo_profile_output_is_never_scaled(tmp_path, capsys):
+    # D11: the wind multiplier applies only at the simulator input boundary
+    # (scenario_input, api._day_profiles), never in etl demo-profile. The banner
+    # promises "No interpolation, no scaling", so an unscaled artifact must serve
+    # every multiplier. There is no --wind-multiplier flag on this subcommand.
+    in_path = tmp_path / "load.csv"
+    wind_path = tmp_path / "wind.csv"
+    out_path = tmp_path / "profile.csv"
+    _ten_day_fixture(in_path)
+    wind_mw = {d: 50.0 + i for i, d in enumerate(_WINTER_DATES)}
+    _write_wind_fixture(wind_path, _WINTER_DATES, wind_mw)
+
+    code = _run(
+        [
+            "demo-profile",
+            "--input",
+            str(in_path),
+            "--wind-input",
+            str(wind_path),
+            "--start",
+            "2023-01-03",
+            "--end",
+            "2023-01-06",
+            "--out",
+            str(out_path),
+        ]
+    )
+    capsys.readouterr()
+    assert code == 0
+
+    with open(out_path, encoding="utf-8") as f:
+        result = scenario_input.read_day_profiles(f, origin=str(out_path))
+    assert result.wind_multiplier == 1.0
+    for day in result.days:
+        expected = wind_mw[day.date.isoformat()]
+        assert all(w == expected for w in day.hourly_wind_mw)
+
+
 def test_demo_profile_no_wind_input_has_wind_false(tmp_path, capsys):
     in_path = tmp_path / "load.csv"
     out_path = tmp_path / "profile.csv"

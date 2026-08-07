@@ -60,6 +60,7 @@ def _scenario_body() -> dict:
         "available_capacity_mw": 13000,
         "peak_weight": 0.7,
         "smooth_weight": 0.3,
+        "wind_generation_multiplier": 2.5,
     }
 
 
@@ -95,6 +96,7 @@ def test_scenario_roundtrips_all_fields(dsn: str):
     assert got.inputs.available_capacity_mw == 13000
     assert got.inputs.peak_weight == 0.7
     assert got.inputs.smooth_weight == 0.3
+    assert got.inputs.wind_generation_multiplier == 2.5
 
 
 @requires_db

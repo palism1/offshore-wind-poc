@@ -140,6 +140,18 @@ _OPEN_QUESTIONS_STATIC = {
         ),
         "handoff_ref": "docs/archive/plans/PLAN_REVIEW_FIXES.md Phase 5",
     },
+    "wind_multiplier_range": {
+        "flags": ["--wind-multiplier"],
+        "note": (
+            "Component 1 User Inputs lists wind_generation_multiplier with a "
+            "validation range of @ and describes the field as whole-number. "
+            "Implemented as any finite value >= 0.0, default 1.0. At 1.0 the "
+            "shipped profiles still charge 0.0 MWh (ISO-NE system-wide wind "
+            "almost never exceeds system load); a multiplier near 5 is what "
+            "makes surplus wind appear."
+        ),
+        "handoff_ref": "docs/source/2026-08-05_Software_Architecture_Documentation.md Component 1",
+    },
     "zone_band_gaps": {
         "flags": [],
         "note": (
@@ -273,6 +285,18 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     parser.add_argument(
+        "--wind-multiplier",
+        type=_finite_float,
+        default=cfg.default_wind_generation_multiplier,
+        help=(
+            f"scale historical wind by this factor before the engine sees it "
+            f"(default {cfg.default_wind_generation_multiplier}, sourced: Architecture "
+            "2026-08-05 Component 1) [OPEN: wind_multiplier_range]. At 1.0 the shipped "
+            "profiles still charge 0.0 MWh: ISO-NE system-wide wind almost never "
+            "exceeds system load. A multiplier near 5 is what makes surplus wind appear."
+        ),
+    )
+    parser.add_argument(
         "--min-stress-window-days",
         type=int,
         default=cfg.default_min_stress_window_days,
@@ -370,14 +394,18 @@ def cmd_run(args: argparse.Namespace) -> int:
 
 def _run(args: argparse.Namespace) -> int:
     if args.input == "-":
-        day_set = scenario_input.read_day_profiles(sys.stdin, origin="<stdin>")
+        day_set = scenario_input.read_day_profiles(
+            sys.stdin, origin="<stdin>", wind_multiplier=args.wind_multiplier
+        )
     else:
         try:
             stream = open(args.input, encoding="utf-8", newline="")
         except OSError as exc:
             raise ValueError(f"cannot open input file: {exc}") from exc
         try:
-            day_set = scenario_input.read_day_profiles(stream, origin=args.input)
+            day_set = scenario_input.read_day_profiles(
+                stream, origin=args.input, wind_multiplier=args.wind_multiplier
+            )
         finally:
             stream.close()
 
@@ -656,6 +684,7 @@ def _build_report(
             "wind_charge_source",
             "surplus wind above the hour's net load, charge and pre-charge alike",
         ),
+        _oq("wind_multiplier_range", args.wind_multiplier),
     ]
 
     return {
@@ -670,6 +699,7 @@ def _build_report(
             "wind_forecast_frac_source": day_set.wind_forecast_frac_source,
             "has_wind": day_set.has_wind,
             "hour_convention": day_set.hour_convention,
+            "wind_multiplier": day_set.wind_multiplier,
         },
         "asset": {
             "total_mwh": asset.total_mwh,

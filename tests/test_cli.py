@@ -262,6 +262,16 @@ def test_json_summary_matches_direct_simulate_call():
     assert summary["final_soc"] == pytest.approx(result.final_soc)
 
 
+def test_wind_multiplier_flag_reaches_the_report():
+    default_report = _report([])
+    scaled_report = _report(["--wind-multiplier", "5.0"])
+    assert default_report["input"]["wind_multiplier"] == 1.0
+    assert scaled_report["input"]["wind_multiplier"] == 5.0
+    assert scaled_report["summary"]["recharge_opportunity_mwh"] > (
+        default_report["summary"]["recharge_opportunity_mwh"]
+    )
+
+
 def test_equivalent_full_cycles_is_energy_discharged_over_rated_capacity():
     """Pins the Phase 3 formula change: EFC is discharged / rated capacity, with
     no division by efficiency. Coincides with the old (energy drawn / rated

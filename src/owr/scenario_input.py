@@ -84,6 +84,7 @@ class DayProfileSet:
     has_wind: bool
     warnings: tuple[str, ...]
     hour_convention: str  # "hour-ending-1-24" | "hour-beginning-0-23"
+    wind_multiplier: float
 
 
 def _err(origin: str, lineno: int | None, message: str) -> ScenarioInputError:
@@ -111,10 +112,23 @@ def _parse_finite_float(value: str, *, origin: str, lineno: int, column: str) ->
     return parsed
 
 
-def read_day_profiles(stream: TextIO, *, origin: str) -> DayProfileSet:
+def read_day_profiles(
+    stream: TextIO, *, origin: str, wind_multiplier: float = 1.0
+) -> DayProfileSet:
     """Read and validate a day-profile CSV, returning a sorted, validated DayProfileSet.
 
     ``origin`` is a label used in error messages (e.g. the file path or "<stdin>").
+
+    ``wind_multiplier`` scales every ``wind_mw`` cell after it is parsed (D11, D12:
+    the multiplier applies once, at the simulator input boundary; it never touches
+    ``wind_forecast_frac``, a fraction of nameplate capacity that scaling has no
+    physical meaning for). A non-finite or negative multiplier raises
+    ``ScenarioInputError`` immediately. With no ``wind_mw`` column, the multiplier
+    has no effect: ``has_wind`` stays False regardless of its value.
+
+    OPEN team question (``wind_multiplier_range``): Component 1 User Inputs lists
+    the field's validation range as ``@`` and calls it whole-number; implemented
+    here as any finite value ``>= 0.0``, default 1.0.
 
     Note on line-number bookkeeping: pre-filtering blank/comment lines before handing
     them to csv.DictReader desynchronizes the line-number map from the reader if a
@@ -123,6 +137,12 @@ def read_day_profiles(stream: TextIO, *, origin: str) -> DayProfileSet:
     multi-line field is not a realistic input; the line numbers are diagnostic aids,
     not a parsing contract, and this edge case is left unhandled deliberately.
     """
+    if not math.isfinite(wind_multiplier) or wind_multiplier < 0:
+        raise _err(
+            origin,
+            None,
+            f"wind_multiplier must be finite and >= 0, got {wind_multiplier!r}",
+        )
     filtered = [
         (n, line)
         for n, line in enumerate(stream, 1)
@@ -205,6 +225,14 @@ def read_day_profiles(stream: TextIO, *, origin: str) -> DayProfileSet:
                 if not raw_wind
                 else _parse_finite_float(raw_wind, origin=origin, lineno=lineno, column="wind_mw")
             )
+            wind_mw *= wind_multiplier
+            if not math.isfinite(wind_mw):
+                raise _err(
+                    origin,
+                    lineno,
+                    f"column 'wind_mw': value overflows to non-finite after applying "
+                    f"wind_multiplier={wind_multiplier!r}",
+                )
         else:
             wind_mw = None
 
@@ -356,4 +384,5 @@ def read_day_profiles(stream: TextIO, *, origin: str) -> DayProfileSet:
         has_wind=has_wind,
         warnings=tuple(warnings),
         hour_convention=hour_convention,
+        wind_multiplier=wind_multiplier,
     )

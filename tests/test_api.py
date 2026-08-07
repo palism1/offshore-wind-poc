@@ -175,3 +175,38 @@ def test_annotation_says_below_when_the_run_ends_under_the_floor(client: TestCli
     rid = run.json()["id"]
     pkg = client.post(f"/runs/{rid}/decision-package").json()
     assert "below its protected floor" in pkg["annotation"]
+
+
+def test_scenario_wind_multiplier_scales_the_run(client: TestClient):
+    body = _scenario_body()
+    # Leave room below capacity to charge, so surplus wind has somewhere to go.
+    body["storage_start_mwh"] = 10000
+    body["wind_generation_multiplier"] = 1.0
+    sid_default = client.post("/scenarios", json=body).json()["id"]
+    run_default = client.post(f"/scenarios/{sid_default}/runs", json={"days": _days()})
+    assert run_default.status_code == 201
+    rid_default = run_default.json()["id"]
+    default_results = client.get(f"/runs/{rid_default}/results").json()
+
+    body["wind_generation_multiplier"] = 50.0
+    sid_scaled = client.post("/scenarios", json=body).json()["id"]
+    run_scaled = client.post(f"/scenarios/{sid_scaled}/runs", json={"days": _days()})
+    assert run_scaled.status_code == 201
+    rid_scaled = run_scaled.json()["id"]
+    scaled_results = client.get(f"/runs/{rid_scaled}/results").json()
+
+    # Higher wind lets the reserve recharge more, so at least one hour's SoC
+    # differs between the default and the scaled run.
+    default_soc = [h["soc"] for d in default_results["daily"] for h in d["hourly"]]
+    scaled_soc = [h["soc"] for d in scaled_results["daily"] for h in d["hourly"]]
+    assert default_soc != scaled_soc
+
+
+def test_wind_multiplier_rejects_inf_on_the_wire(client: TestClient):
+    import json as json_lib
+
+    body = _scenario_body()
+    body["wind_generation_multiplier"] = "__INF__"
+    raw = json_lib.dumps(body).replace('"__INF__"', "Infinity")
+    r = client.post("/scenarios", content=raw, headers={"content-type": "application/json"})
+    assert r.status_code == 422

@@ -16,6 +16,12 @@ HOURS_PER_DAY = 24
 
 
 class ScenarioCreate(BaseModel):
+    # Scales historical wind before the engine sees it (D11, D12; Component 1 User
+    # Inputs, sourced default 1.0). Field(ge=0) alone accepts inf, so
+    # allow_inf_nan=False is required.
+    # OPEN team question (wind_multiplier_range): the source's validation range is
+    # "@" and the field is described as whole-number.
+    wind_generation_multiplier: float = Field(default=1.0, ge=0, allow_inf_nan=False)
     name: str | None = None
     # generic storage asset (pumped-hydro vs battery is a copy decision, not a fork)
     storage_total_mwh: float = Field(gt=0)

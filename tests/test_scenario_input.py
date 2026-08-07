@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import io
+import sys
 from datetime import date
 
 import pytest
@@ -454,3 +455,53 @@ def test_committed_examples_are_hour_beginning():
         with open(path, encoding="utf-8") as f:
             result = read_day_profiles(f, origin=path)
         assert result.hour_convention == "hour-beginning-0-23"
+
+
+# --------------------------------------------------------------------------- #
+# Wind multiplier (change 8, D11, D12)
+# --------------------------------------------------------------------------- #
+
+
+def test_wind_multiplier_scales_every_hour():
+    content = _csv(
+        "date,hour,load_mw,wind_mw",
+        _rows("2026-01-10", _flat_load(), {"wind_mw": [100.0] * 24}),
+    )
+    result = read_day_profiles(io.StringIO(content), origin="test", wind_multiplier=2.5)
+    assert all(w == 250.0 for w in result.days[0].hourly_wind_mw)
+    assert result.wind_multiplier == 2.5
+
+
+def test_wind_multiplier_default_is_identity():
+    content = _csv(
+        "date,hour,load_mw,wind_mw",
+        _rows("2026-01-10", _flat_load(), {"wind_mw": [100.0, 200.0] + [50.0] * 22}),
+    )
+    default = read_day_profiles(io.StringIO(content), origin="test")
+    explicit = read_day_profiles(io.StringIO(content), origin="test", wind_multiplier=1.0)
+    assert default.days == explicit.days
+
+
+@pytest.mark.parametrize("bad", [-1.0, float("nan"), float("inf"), float("-inf")])
+def test_wind_multiplier_rejects_negative_and_non_finite(bad):
+    content = _csv(
+        "date,hour,load_mw,wind_mw", _rows("2026-01-10", _flat_load(), {"wind_mw": [100.0] * 24})
+    )
+    with pytest.raises(ScenarioInputError):
+        read_day_profiles(io.StringIO(content), origin="test", wind_multiplier=bad)
+
+
+def test_wind_multiplier_overflow_to_inf_is_rejected():
+    content = _csv(
+        "date,hour,load_mw,wind_mw",
+        _rows("2026-01-10", _flat_load(), {"wind_mw": [sys.float_info.max] * 24}),
+    )
+    with pytest.raises(ScenarioInputError, match="non-finite"):
+        read_day_profiles(io.StringIO(content), origin="test", wind_multiplier=2.0)
+
+
+def test_wind_multiplier_without_wind_column_is_a_no_op():
+    content = _csv("date,hour,load_mw", _rows("2026-01-10", _flat_load()))
+    result = read_day_profiles(io.StringIO(content), origin="test", wind_multiplier=5.0)
+    assert result.has_wind is False
+    assert result.days[0].hourly_wind_mw == ()

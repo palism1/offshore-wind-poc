@@ -28,6 +28,7 @@ from owr.simulator import SimulationResult
 # Scenario columns that map 1:1 to ScenarioCreate fields, in a fixed order reused
 # by both INSERT and SELECT so the two never drift.
 _SCENARIO_FIELDS = (
+    "wind_generation_multiplier",
     "name",
     "storage_total_mwh",
     "storage_start_mwh",

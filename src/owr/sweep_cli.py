@@ -152,6 +152,18 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     parser.add_argument(
+        "--wind-multiplier",
+        type=_finite_float,
+        default=cfg.default_wind_generation_multiplier,
+        help=(
+            f"scale historical wind by this factor before the engine sees it "
+            f"(default {cfg.default_wind_generation_multiplier}, sourced: Architecture "
+            "2026-08-05 Component 1) [OPEN: wind_multiplier_range]. At 1.0 the shipped "
+            "profiles still charge 0.0 MWh: ISO-NE system-wide wind almost never "
+            "exceeds system load. A multiplier near 5 is what makes surplus wind appear."
+        ),
+    )
+    parser.add_argument(
         "--soc-floor-frac",
         type=_finite_float,
         default=cfg.default_soc_floor_frac,
@@ -216,14 +228,18 @@ def cmd_sweep(args: argparse.Namespace) -> int:
 
 def _run(args: argparse.Namespace) -> int:
     if args.input == "-":
-        day_set = scenario_input.read_day_profiles(sys.stdin, origin="<stdin>")
+        day_set = scenario_input.read_day_profiles(
+            sys.stdin, origin="<stdin>", wind_multiplier=args.wind_multiplier
+        )
     else:
         try:
             stream = open(args.input, encoding="utf-8", newline="")
         except OSError as exc:
             raise ValueError(f"cannot open input file: {exc}") from exc
         try:
-            day_set = scenario_input.read_day_profiles(stream, origin=args.input)
+            day_set = scenario_input.read_day_profiles(
+                stream, origin=args.input, wind_multiplier=args.wind_multiplier
+            )
         finally:
             stream.close()
 
@@ -259,6 +275,7 @@ def _run(args: argparse.Namespace) -> int:
         cfg=cfg,
         result=result,
         hour_convention=day_set.hour_convention,
+        wind_multiplier=day_set.wind_multiplier,
     )
 
     if args.chart:
@@ -307,6 +324,7 @@ def _build_report(
     cfg: Config,
     result,
     hour_convention: str,
+    wind_multiplier: float,
 ) -> dict:
     input_block = {
         "path": args.input,
@@ -314,6 +332,7 @@ def _build_report(
         "date_start": days[0].date.isoformat(),
         "date_end": days[-1].date.isoformat(),
         "hour_convention": hour_convention,
+        "wind_multiplier": wind_multiplier,
     }
     spec_block = {
         "sizes_mwh": list(spec.sizes_mwh),

@@ -146,6 +146,35 @@ def test_reference_point_real_and_synthetic(monkeypatch):
     assert report["points"][0]["severity_reduction"] == pytest.approx(0.25, abs=1e-9)
 
 
+def test_wind_multiplier_flag_changes_the_sweep(monkeypatch):
+    code, out, err = _run_cli(
+        [
+            "--input", REAL_CSV,
+            "--sizes-mwh", "60000",
+            "--power-mw", "4320",
+            "--format", "json",
+        ],
+        monkeypatch,
+    )
+    assert code == 0
+    default_report = json.loads(out)
+    assert default_report["input"]["wind_multiplier"] == 1.0
+
+    code, out, err = _run_cli(
+        [
+            "--input", REAL_CSV,
+            "--sizes-mwh", "60000",
+            "--power-mw", "4320",
+            "--wind-multiplier", "10.0",
+            "--format", "json",
+        ],
+        monkeypatch,
+    )
+    assert code == 0
+    scaled_report = json.loads(out)
+    assert scaled_report["input"]["wind_multiplier"] == 10.0
+
+
 def test_data_out_writes_bannered_csv(monkeypatch, tmp_path):
     out_path = tmp_path / "sweep.csv"
     code, out, err = _run_cli(

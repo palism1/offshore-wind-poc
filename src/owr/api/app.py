@@ -16,9 +16,12 @@ contract for the frontend.
 
 from __future__ import annotations
 
+import math
 import os
 
-from fastapi import Depends, FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException, Request
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse
 
 from owr import metrics
 from owr.api import schemas
@@ -40,17 +43,57 @@ def _asset(inp: schemas.ScenarioCreate) -> StorageAsset:
     )
 
 
-def _day_profiles(days: list[schemas.DayProfileIn]) -> list[DayProfile]:
-    return [
-        DayProfile(
-            date=d.date,
-            hourly_load_mw=tuple(d.hourly_load_mw),
-            hourly_wind_mw=tuple(d.hourly_wind_mw) if d.hourly_wind_mw else (),
-            demand_percentile=d.demand_percentile,
-            wind_forecast_frac=d.wind_forecast_frac,
+def _day_profiles(
+    days: list[schemas.DayProfileIn], *, wind_multiplier: float = 1.0
+) -> list[DayProfile]:
+    """Build engine ``DayProfile`` objects from the wire payload.
+
+    ``wind_multiplier`` scales ``hourly_wind_mw`` here (D11, D12: the multiplier
+    applies once, at the simulator input boundary; site 2 of the wind-consumer
+    trace). ``wind_forecast_frac`` is never scaled: it is a fraction of nameplate
+    capacity, not an energy. A multiplier that overflows a wind value to a
+    non-finite number raises ``ValueError``, which the caller turns into a 422.
+    """
+    result = []
+    for d in days:
+        scaled_wind = (
+            tuple(w * wind_multiplier for w in d.hourly_wind_mw) if d.hourly_wind_mw else ()
         )
-        for d in days
-    ]
+        if any(not math.isfinite(w) for w in scaled_wind):
+            raise ValueError(
+                f"hourly_wind_mw on {d.date.isoformat()} overflows to non-finite after "
+                f"applying wind_multiplier={wind_multiplier!r}"
+            )
+        result.append(
+            DayProfile(
+                date=d.date,
+                hourly_load_mw=tuple(d.hourly_load_mw),
+                hourly_wind_mw=scaled_wind,
+                demand_percentile=d.demand_percentile,
+                wind_forecast_frac=d.wind_forecast_frac,
+            )
+        )
+    return result
+
+
+def _sanitize_non_finite(value: object) -> object:
+    """Replace any inf/nan float in a validation-error payload with its string
+    form, recursively.
+
+    A rejected ``allow_inf_nan=False`` field (e.g. ``wind_generation_multiplier``)
+    echoes the raw offending value back in FastAPI's 422 error detail. Starlette's
+    default ``JSONResponse`` serializes with ``allow_nan=False``, so an
+    unsanitized inf/nan in that payload turns the intended 422 into an
+    unhandled 500. This walks the error structure and stringifies any such
+    float before the response is built.
+    """
+    if isinstance(value, float) and not math.isfinite(value):
+        return str(value)
+    if isinstance(value, dict):
+        return {k: _sanitize_non_finite(v) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_sanitize_non_finite(v) for v in value]
+    return value
 
 
 def _severity_reduction(baseline_peak: float, reserve_peak: float) -> float:
@@ -128,6 +171,14 @@ def create_app(repo: Repository | None = None) -> FastAPI:
     def get_repo() -> Repository:
         return repository
 
+    @app.exception_handler(RequestValidationError)
+    async def _validation_error_handler(
+        request: Request, exc: RequestValidationError
+    ) -> JSONResponse:
+        return JSONResponse(
+            status_code=422, content={"detail": _sanitize_non_finite(exc.errors())}
+        )
+
     @app.get("/health")
     def health() -> dict:
         return {"status": "ok", "code_version": code_version()}
@@ -157,7 +208,7 @@ def create_app(repo: Repository | None = None) -> FastAPI:
         run = r.add_run(scenario_id, code_version())
         try:
             run.status = "running"
-            days = _day_profiles(body.days)
+            days = _day_profiles(body.days, wind_multiplier=inp.wind_generation_multiplier)
             asset = _asset(inp)
             run.stress_windows = with_peak_hourly_load(
                 find_stress_windows(days, inp.severity_percentile, inp.min_stress_window_days),
