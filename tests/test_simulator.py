@@ -17,12 +17,16 @@ from owr.simulator import DAILY_FRAME_COLUMNS, HOURLY_FRAME_COLUMNS, simulate
 
 
 def _stress_day(i: int) -> DayProfile:
-    # Evening-peak day: flat 8000 MW base, peak 12000 MW at hour 18, low wind (stress).
+    # Evening-peak day: flat 8000 MW base, peak 12000 MW at hour 18.
     load = [8000.0] * 24
     load[17] = 10000.0
     load[18] = 12000.0
     load[19] = 10000.0
-    wind = [500.0] * 24  # low wind during the event
+    # 9000.0, raised from 500.0 (Week 4B change 7, R7): the revised daily_budget
+    # takes surplus wind above load as its recharge term, and 500 MW leaves zero
+    # surplus against an 8,000-12,000 MW load, which zeroes the whole budget.
+    # 9000 MW clears load in every hour except the 10,000-12,000 MW peak triplet.
+    wind = [9000.0] * 24
     return DayProfile(
         date=date(2026, 1, 10) + timedelta(days=i),
         hourly_load_mw=tuple(load),
@@ -56,8 +60,11 @@ def test_rolling_window_shaves_peak_and_respects_reserve():
             assert hour.soc >= asset.min_soc_mwh - 1e-6
     # the reserve reduces the worst net-load hour below the gross peak
     assert result.reserve_peak_mw < result.baseline_peak_mw
-    # SoC was actually drawn down (energy was delivered)
-    assert result.final_soc < asset.total_mwh
+    # energy was actually delivered during the peak, even though the ample
+    # surplus wind this fixture now carries (Week 4B change 7, R7) recharges
+    # the reserve back to total_mwh by the end of each day
+    total_discharged = sum(h.discharge for day in result.daily for h in day.hourly)
+    assert total_discharged > 0
 
 
 @pytest.mark.parametrize("efficiency", [0.5, 0.72])
@@ -151,6 +158,60 @@ def test_reserve_peak_never_exceeds_baseline_peak():
         available_capacity_mw=13000.0,
     )
     assert stress_result.reserve_peak_mw <= stress_result.baseline_peak_mw
+
+
+def _stress_day_with_wind(i: int, wind_mw: float) -> DayProfile:
+    load = [8000.0] * 24
+    load[17] = 10000.0
+    load[18] = 12000.0
+    load[19] = 10000.0
+    return DayProfile(
+        date=date(2026, 1, 10) + timedelta(days=i),
+        hourly_load_mw=tuple(load),
+        hourly_wind_mw=tuple([wind_mw] * 24),
+        demand_percentile=0.95,
+        wind_forecast_frac=0.1,
+    )
+
+
+def test_budget_is_zero_without_surplus_wind():
+    # R7, Week 4B change 7: wind at 500 MW never clears the 8,000-12,000 MW load,
+    # so expected_recharge_mwh is 0.0 and the two-term minimum is 0.0 regardless
+    # of available_charge. This is the correct rule, not a defect.
+    asset = StorageAsset(
+        total_mwh=20000, power_mw=2000, efficiency=1.0,
+        soc_floor_frac=0.33, strategic_reserve_frac=0.0,
+    )
+    window = [_stress_day_with_wind(i, 500.0) for i in range(3)]
+    result = simulate(asset, window, starting_soc=asset.total_mwh)
+    assert result.final_soc == pytest.approx(asset.total_mwh)
+    for day in result.daily:
+        assert day.budget == pytest.approx(0.0)
+        for hour in day.hourly:
+            assert hour.discharge == pytest.approx(0.0)
+
+
+def test_budget_rises_with_more_surplus_wind():
+    # Ties Phase 5's wind multiplier to Phase 9's recharge term: more surplus
+    # wind raises expected_recharge_mwh, which raises the discharge budget
+    # whenever the recharge term is the binding (smaller) one.
+    asset = StorageAsset(
+        total_mwh=20000, power_mw=2000, efficiency=1.0,
+        soc_floor_frac=0.33, strategic_reserve_frac=0.0,
+    )
+    # 8,100 and 8,300 MW: both keep the recharge term below the available-charge
+    # term (so the recharge term stays the binding, smaller one; 9,000 MW and
+    # above already saturate the available-charge term for this asset, which
+    # would make the two runs equal and prove nothing).
+    low_wind = simulate(
+        asset, [_stress_day_with_wind(i, 8100.0) for i in range(3)], starting_soc=asset.total_mwh
+    )
+    high_wind = simulate(
+        asset, [_stress_day_with_wind(i, 8300.0) for i in range(3)], starting_soc=asset.total_mwh
+    )
+    low_discharged = sum(h.discharge for day in low_wind.daily for h in day.hourly)
+    high_discharged = sum(h.discharge for day in high_wind.daily for h in day.hourly)
+    assert high_discharged > low_discharged
 
 
 def test_capacity_margin_follows_the_net_load_definition():

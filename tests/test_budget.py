@@ -1,6 +1,8 @@
 """Tests for priority and daily budget. Quotes Architecture:
     Priority(d) = 0.7*DemandPercentile + 0.3*WindForecast
-    plus the "80% energy budget rule".
+    plus Component 5's two-term minimum (Week 4B change 7, revised 2026-08-06):
+    daily_budget = min(available_charge / remaining_stress_days,
+                        energy_recharged_over_N_remaining_cycles / N_remaining_cycles).
 """
 
 import pytest
@@ -18,20 +20,90 @@ def test_priority_weights_match_doc():
     assert priority(1.0, 0.0, CFG) == pytest.approx(0.7)
 
 
-def test_daily_budget_single_day_is_80pct_cap():
-    # one remaining day -> full 80% of usable energy
-    budget = daily_budget(1000.0, day_priority=0.5, remaining_priority_sum=0.5, config=CFG)
-    assert budget == pytest.approx(800.0)
+def test_daily_budget_takes_the_smaller_term():
+    # available_charge term smaller: 1000/2 = 500 < 900/1 = 900
+    assert daily_budget(
+        available_charge_mwh=1000.0,
+        remaining_stress_days=2,
+        expected_recharge_mwh=900.0,
+        remaining_cycles=1,
+    ) == pytest.approx(500.0)
+    # expected_recharge term smaller: 1000/1 = 1000 > 300/3 = 100
+    assert daily_budget(
+        available_charge_mwh=1000.0,
+        remaining_stress_days=1,
+        expected_recharge_mwh=300.0,
+        remaining_cycles=3,
+    ) == pytest.approx(100.0)
 
 
-def test_daily_budget_splits_by_priority_share():
-    # two days, this one carries 1/4 of remaining priority -> 800 * 0.25 = 200
-    budget = daily_budget(1000.0, day_priority=0.5, remaining_priority_sum=2.0, config=CFG)
-    assert budget == pytest.approx(200.0)
+def test_daily_budget_single_day_single_cycle_is_the_smaller_raw_term():
+    # one remaining day, one remaining cycle -> min(available_charge, expected_recharge)
+    assert daily_budget(
+        available_charge_mwh=1000.0,
+        remaining_stress_days=1,
+        expected_recharge_mwh=400.0,
+        remaining_cycles=1,
+    ) == pytest.approx(400.0)
 
 
 def test_daily_budget_zero_when_no_usable_energy():
-    assert daily_budget(0.0, 0.5, 0.5, CFG) == 0.0
+    assert daily_budget(
+        available_charge_mwh=0.0,
+        remaining_stress_days=1,
+        expected_recharge_mwh=500.0,
+        remaining_cycles=1,
+    ) == 0.0
+
+
+def test_daily_budget_is_zero_when_recharge_is_zero():
+    assert daily_budget(
+        available_charge_mwh=1000.0,
+        remaining_stress_days=1,
+        expected_recharge_mwh=0.0,
+        remaining_cycles=1,
+    ) == 0.0
+
+
+def test_daily_budget_rejects_zero_or_negative_denominators():
+    with pytest.raises(ValueError):
+        daily_budget(
+            available_charge_mwh=1000.0,
+            remaining_stress_days=0,
+            expected_recharge_mwh=500.0,
+            remaining_cycles=1,
+        )
+    with pytest.raises(ValueError):
+        daily_budget(
+            available_charge_mwh=1000.0,
+            remaining_stress_days=1,
+            expected_recharge_mwh=500.0,
+            remaining_cycles=0,
+        )
+    with pytest.raises(ValueError):
+        daily_budget(
+            available_charge_mwh=1000.0,
+            remaining_stress_days=-1,
+            expected_recharge_mwh=500.0,
+            remaining_cycles=1,
+        )
+
+
+def test_daily_budget_rejects_negative_energy():
+    with pytest.raises(ValueError):
+        daily_budget(
+            available_charge_mwh=-1.0,
+            remaining_stress_days=1,
+            expected_recharge_mwh=500.0,
+            remaining_cycles=1,
+        )
+    with pytest.raises(ValueError):
+        daily_budget(
+            available_charge_mwh=1000.0,
+            remaining_stress_days=1,
+            expected_recharge_mwh=-1.0,
+            remaining_cycles=1,
+        )
 
 
 def test_recharge_sufficiency_ratio():

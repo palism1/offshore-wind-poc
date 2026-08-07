@@ -23,7 +23,7 @@ uv sync --extra etl --extra api --extra viz
 uv run pytest
 ```
 
-Expect: `731 passed, 4 skipped`. The 4 skips need a live Postgres and are
+Expect: `738 passed, 4 skipped`. The 4 skips need a live Postgres and are
 covered in the optional act.
 
 ## Act 2 — stress-window detection
@@ -42,67 +42,90 @@ Talking point: the rule (daily total demand above the 0.90 percentile, 2+
 consecutive days) is sourced to the 2026-08-05 Architecture document,
 Component 3, and the output says so on its source line.
 
-## Act 3 — the real event, baseline
+## Act 3 — the real event, recharge-limited vs recharge-fed
 
 Real ISO-NE load and real EIA-930 hourly wind, the 11-day stress event
 2026-01-24 to 2026-02-03 (the event Report B priced at $443/MWh). The reserve
-starts fully charged: `docs/archive/plans/PLAN_REVIEW_FIXES.md` F5 fix makes pre-event
-charging take only wind above the hour's load, and ISO-NE system-wide wind
-almost never exceeds system load, so a `--start-soc-mwh 20000` run now shows
-almost no gain (severity reduction rounds to 0.0%). This full-charge command
-is the one with a number worth discussing:
+starts fully charged: `docs/archive/plans/PLAN_REVIEW_FIXES.md` F5 fix makes
+pre-event charging take only wind above the hour's load.
+
+Week 4B change 7 replaced the daily discharge budget with Component 5's
+two-term minimum: `min(available_charge / remaining_stress_days,
+expected_recharge / remaining_cycles)`. ISO-NE system-wide wind almost never
+exceeds system load, so at the identity wind multiplier the recharge term is
+0.0 every day and the reserve cannot discharge at all:
 
 ```bash
 uv run simulate --input examples/real_winter_stress_2026.csv \
   --storage-mwh 60000 --power-mw 2000 --lead-days 1
 ```
 
-Expect, in the report:
-
 | Line | Value |
 |---|---|
 | Pre-event charging | 60,000 MWh -> 60,000 MWh over 1 lead day |
-| Severity reduction | 1.0% |
-| Energy discharged | 34,538 MWh |
-| Equivalent full cycles | 0.576 |
+| Severity reduction | 0.0% |
+| Energy discharged | 0 MWh |
+| Budget every day | 0 MWh |
 
-Three expected quirks, say them before anyone asks:
+`--wind-multiplier 15` restores surplus wind and the reserve moves again, now
+recharge-fed rather than sitting on its pre-charged energy alone:
+
+```bash
+uv run simulate --input examples/real_winter_stress_2026.csv \
+  --storage-mwh 60000 --power-mw 2000 --lead-days 1 --wind-multiplier 15
+```
+
+| Line | Value |
+|---|---|
+| Severity reduction | 1.2% |
+| Energy discharged | 60,231 MWh |
+| Energy charged | 68,450 MWh |
+| Equivalent full cycles | 1.004 |
+| Final SoC (floor 18,000 MWh) | 47,322 MWh |
+
+Talking point: under the revised rule the reserve is recharge limited, not
+energy limited. A fully charged 60,000 MWh reserve delivers nothing across an
+11-day event without surplus wind to refill it day over day; give it surplus
+wind and it moves more energy than its own rated capacity (1.004 equivalent
+full cycles). Three expected quirks, say them before anyone asks:
 
 - A warning notes `wind_forecast_frac` defaulted to 0.0. Deriving it needs a
   wind nameplate capacity the team has not chosen (open question
   `wind_forecast_frac_derivation`).
-- `energy charged 0 MWh`: wind is about 5% of system load inside this
-  window, so in-window recharge rounds to zero. The wind series does its
-  work in the pre-event charging line, and here it reports no gain: the
-  reserve is already at 60,000 MWh before the event starts.
+- At the identity multiplier, wind is about 5% of system load inside this
+  window, so in-window recharge rounds to zero and the budget floors at 0.0
+  MWh every day (open question `recharge_cycle_basis`).
 - `wind_charge_source` (F5): ISO-NE system-wide wind never exceeds system
-  load in this window, so the reserve sees no surplus to charge from at any
-  starting SoC, and the engine now says so in its open-questions block
-  instead of assuming a dedicated wind farm whose output goes to the
-  reserve first.
+  load in this window at the identity multiplier, so the reserve sees no
+  surplus to charge from at any starting SoC, and the engine says so in its
+  open-questions block instead of assuming a dedicated wind farm whose
+  output goes to the reserve first.
 
 ## Act 4 — same event at the historic 100%-efficient reading
 
 Week 4B moved the engine default from 1.0 to 0.7225 (`0.85 * 0.85`, Report
 B's 0.85 read as a per-leg figure and squared to the round-trip figure this
-flag takes). Act 3 above already ran at that default. This act reruns the
-same event with `--efficiency 1.0` to show the Overview's original
-"100% efficient" reading for comparison, and to show that the flag still
-takes a round-trip figure directly, never a pre-squared value:
+flag takes). At the identity wind multiplier both readings show 0.0%
+(Act 3), so this act runs the comparison at `--wind-multiplier 15`, where
+the budget is non-zero and the efficiency choice is visible. `--efficiency
+1.0` shows the Overview's original "100% efficient" reading for comparison,
+and shows that the flag still takes a round-trip figure directly, never a
+pre-squared value:
 
 ```bash
 uv run simulate --input examples/real_winter_stress_2026.csv \
-  --storage-mwh 60000 --power-mw 2000 --lead-days 1 --efficiency 1.0
+  --storage-mwh 60000 --power-mw 2000 --lead-days 1 \
+  --wind-multiplier 15 --efficiency 1.0
 ```
 
 Expect the same run shape with:
 
 | Line | 0.7225 (default) | 1.0 |
 |---|---|---|
-| Severity reduction | 1.0% | 1.1% |
-| Energy discharged | 34,538 MWh | 40,633 MWh |
-| Equivalent full cycles | 0.576 | 0.677 |
-| Final SoC (floor 18,000 MWh) | 19,367 MWh | 19,367 MWh |
+| Severity reduction | 1.2% | 1.4% |
+| Energy discharged | 60,231 MWh | 68,401 MWh |
+| Equivalent full cycles | 1.004 | 1.140 |
+| Final SoC (floor 18,000 MWh) | 47,322 MWh | 50,139 MWh |
 
 Talking point: every published energy number moves with this one decision.
 `--efficiency 0.72` still realizes the Dick et al. (J. Energy Storage,
@@ -112,17 +135,25 @@ the value `[OPEN: round_trip_efficiency]` in its own output.
 
 ## Act 5 — how the answer scales with storage size
 
+At the identity wind multiplier every row is 0.00% (R7: no surplus wind, no
+recharge, no budget). `--wind-multiplier 15` is the same recharge-fed
+scenario Acts 3 and 4 use:
+
 ```bash
 uv run sweep --input examples/real_winter_stress_2026.csv \
-  --power-mw 2000 --chart sweep.png
+  --power-mw 2000 --wind-multiplier 15 --chart sweep.png
 ```
 
 Expect a 7-row table from 5,000 to 100,000 MWh. Reference row at
-60,000 MWh: severity 0.90%, discharged 34,620 MWh, EFC 0.577 (the sweep runs
+60,000 MWh: severity 1.10%, discharged 62,329 MWh, EFC 1.039 (the sweep runs
 every size over the full 11-day window with no lead days, which is why its
 60,000 MWh figures sit close to but not identical with Act 3's full-charge,
-1-lead-day run). Open `sweep.png` for the slide-ready chart. Add
-`--data-out sweep.csv` for the numbers as CSV.
+1-lead-day run). Note EFC falls past 60,000 MWh (0.953, then 0.886): larger
+storage draws a larger discharge budget denominator while the same fixed
+wind supply caps how much energy actually moves, so cycling intensity per
+MWh installed declines even as total energy discharged keeps rising. Open
+`sweep.png` for the slide-ready chart. Add `--data-out sweep.csv` for the
+numbers as CSV.
 
 ## Optional act — API and database
 

@@ -3,10 +3,15 @@
 Orchestrates the per-day cycle over a stress window:
 
     for each day d in the window:
-        priority(d)      -> budget(d)         (budget module)
+        priority(d), report-only (D13) -> budget(d), the two-term minimum
         allocate budget  -> hourly discharge  (dispatch module)
         apply discharge, then off-peak recharge from wind  (soc_engine)
         record hourly + daily results, capacity margin      (metrics)
+
+Week 4B change 7 replaced ``budget.daily_budget``'s "80% cap times priority
+share" rule with Component 5's two-term minimum. ``priority(d)`` is still
+computed for the report; it no longer feeds the budget (D13, OPEN team
+question ``priority_weighting_retired``).
 
 Model predictive control in spirit: each day is planned with that day's forecast and
 executed one step at a time; state (SoC) carries forward. No I/O — inputs are plain
@@ -113,6 +118,24 @@ class SimulationResult:
         )
 
 
+def _surplus_wind_recharge_mwh(days: list[DayProfile]) -> float:
+    """Forecast recharge (MWh): surplus wind summed across every hour of ``days``.
+
+    ``max(0.0, wind[h] - max(0.0, load[h]))``, exactly the rule
+    ``initial_soc.charge_from_wind`` applies, so the pre-event forecast and this
+    mid-window forecast cannot drift apart. Applies no SoC or power clamp: this
+    is a forecast of opportunity for ``budget.daily_budget``'s recharge term,
+    not a dispatch.
+    """
+    total = 0.0
+    for day in days:
+        load = day.hourly_load_mw
+        wind = day.hourly_wind_mw if day.hourly_wind_mw else [0.0] * HOURS_PER_DAY
+        for h in range(HOURS_PER_DAY):
+            total += max(0.0, wind[h] - max(0.0, load[h]))
+    return total
+
+
 def simulate(
     asset: StorageAsset,
     window_days: list[DayProfile],
@@ -131,19 +154,26 @@ def simulate(
     baseline_peak = 0.0
     reserve_peak = 0.0
 
-    # Priority of each remaining day, so budget(d) can take a fair share of the cap.
+    # Priority per day is report-only as of Week 4B change 7 (D13): still
+    # computed and written to DailyResult.priority, no longer passed into
+    # daily_budget. See OPEN team question priority_weighting_retired.
     priorities = [
         budget_mod.priority(d.demand_percentile, d.wind_forecast_frac, config)
         for d in window_days
     ]
 
     for i, day in enumerate(window_days):
-        remaining_priority_sum = sum(priorities[i:])
+        # D14: the recharge-cycle basis this engine applies is the remaining
+        # days of the current window, both for N_remaining_cycles and for the
+        # count remaining_stress_days divides by. See OPEN team question
+        # recharge_cycle_basis for the event-level alternative.
+        remaining_days = window_days[i:]
+        remaining_cycles = len(remaining_days)
         day_budget = budget_mod.daily_budget(
-            usable_energy_mwh=usable_energy(soc, asset),
-            day_priority=priorities[i],
-            remaining_priority_sum=remaining_priority_sum,
-            config=config,
+            available_charge_mwh=usable_energy(soc, asset),
+            remaining_stress_days=remaining_cycles,
+            expected_recharge_mwh=_surplus_wind_recharge_mwh(remaining_days),
+            remaining_cycles=remaining_cycles,
         )
 
         load = list(day.hourly_load_mw)

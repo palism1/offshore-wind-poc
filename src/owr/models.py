@@ -340,7 +340,10 @@ class DailyResult:
         (``budget.daily_budget``).
     priority
         This day's priority score among the remaining stress days
-        (``budget.priority``).
+        (``budget.priority``). Report-only as of Week 4B change 7 (D13): no
+        longer feeds ``budget.daily_budget``. Kept because the JSON report and
+        the API's ``run_result_daily`` table both carry it (OPEN team question
+        ``priority_weighting_retired``).
     usable_energy
         Energy (MWh) deliverable at the terminals above the reserve floor, as of
         the end of the day (``soc_engine.usable_energy``). Terminal basis and tank

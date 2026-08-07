@@ -1,10 +1,19 @@
 """Daily budgeting (Architecture Step 5 / budget module).
 
-Priority and the daily discharge budget. The exact Step 5/6 allocation text is a
-blank/blocked section in the source doc (FACT_CHECK inconsistency #4); the rule
-implemented here is the documented-and-labeled interpretation: a day may commit at
-most ``energy_budget_fraction`` of the currently usable energy, scaled by that day's
-priority relative to the rest of the stress window.
+Priority, and the daily discharge budget. Week 4B change 7 replaced the "80% cap
+times priority share" rule with Component 5's two-term minimum, revised
+2026-08-06::
+
+    daily_budget = min(
+        available_charge / remaining_stress_days,
+        energy_recharged_over_N_remaining_cycles / N_remaining_cycles,
+    )
+
+``priority()`` stays: ``DailyResult.priority`` is still in the JSON report and
+the API's ``run_result_daily`` table (D13), so removing it needs an API break.
+``simulator.simulate`` still computes it and no longer passes it to
+``daily_budget``; the list is report-only from this phase on. See OPEN team
+question ``priority_weighting_retired``.
 """
 
 from __future__ import annotations
@@ -18,6 +27,11 @@ def priority(demand_percentile: float, wind_forecast_frac: float, config: Config
     Higher demand raises priority; higher forecast wind (self-supply) lowers the need
     to lean on storage, so the wind term is entered as (1 - forecast) elsewhere. Here
     we implement the doc's literal weighted sum; the simulator decides how to combine.
+
+    Report-only as of Week 4B change 7 (D13): ``simulator.simulate`` still
+    computes this per day and writes it to ``DailyResult.priority``, but no
+    longer feeds it into ``daily_budget``. See OPEN team question
+    ``priority_weighting_retired``.
     """
     return (
         config.priority_demand_weight * demand_percentile
@@ -26,29 +40,40 @@ def priority(demand_percentile: float, wind_forecast_frac: float, config: Config
 
 
 def daily_budget(
-    usable_energy_mwh: float,
-    day_priority: float,
-    remaining_priority_sum: float,
-    config: Config,
+    *,
+    available_charge_mwh: float,
+    remaining_stress_days: int,
+    expected_recharge_mwh: float,
+    remaining_cycles: int,
 ) -> float:
-    """Energy (MWh) this day is allowed to discharge.
+    """Energy (MWh) this day may discharge.
 
-    Caps at ``energy_budget_fraction`` of usable energy (the "80% rule"), then takes
-    this day's share of that cap in proportion to its priority among the remaining
-    stress days. With a single remaining day this is just the 80% cap.
+    Component 5, as revised 2026-08-06::
 
-    ``usable_energy_mwh`` is energy deliverable at the terminals
-    (``soc_engine.usable_energy``, since F1), so the 80% rule caps a terminal-basis
-    budget. ``dispatch.allocate_discharge`` then allocates that budget as hourly
-    discharge, itself a terminal-basis quantity, so the units agree end to end.
+        daily_budget = min(
+            available_charge / remaining_stress_days,
+            energy_recharged_over_N_remaining_cycles / N_remaining_cycles,
+        )
+
+    Both terms come from the caller, so this function fixes no definition of a
+    cycle. See ``simulator.simulate`` for the basis this engine applies and OPEN
+    team question ``recharge_cycle_basis``.
+
+    Takes no ``Config``: the 80 percent energy budget rule no longer enters the
+    daily budget. ``config.energy_budget_fraction`` still drives the next-day
+    need inside ``simulator.simulate``, so the field stays.
     """
-    if usable_energy_mwh <= 0:
-        return 0.0
-    cap = config.energy_budget_fraction * usable_energy_mwh
-    if remaining_priority_sum <= 0:
-        return cap
-    share = min(1.0, day_priority / remaining_priority_sum)
-    return cap * share
+    if remaining_stress_days < 1:
+        raise ValueError("remaining_stress_days must be >= 1")
+    if remaining_cycles < 1:
+        raise ValueError("remaining_cycles must be >= 1")
+    if available_charge_mwh < 0:
+        raise ValueError("available_charge_mwh must be >= 0")
+    if expected_recharge_mwh < 0:
+        raise ValueError("expected_recharge_mwh must be >= 0")
+    term_a = available_charge_mwh / remaining_stress_days
+    term_b = expected_recharge_mwh / remaining_cycles
+    return max(0.0, min(term_a, term_b))
 
 
 def recharge_sufficiency_ratio(

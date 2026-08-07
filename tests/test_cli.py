@@ -319,10 +319,24 @@ def test_no_hourly_soc_below_min_soc():
 
 
 def test_reserve_peak_below_baseline_and_positive_severity_reduction():
-    report = _report([])
+    # --wind-multiplier 25: Week 4B change 7's revised daily_budget takes
+    # surplus wind above load as its recharge term, and this file's wind never
+    # clears its load at the identity multiplier (R7; see the companion test
+    # right below). 25 restores surplus so this run still demonstrates real
+    # discharge.
+    report = _report(["--wind-multiplier", "25"])
     summary = report["summary"]
     assert summary["reserve_peak_mw"] < summary["baseline_peak_mw"]
     assert summary["severity_reduction"] > 0
+
+
+def test_reserve_peak_equals_baseline_without_surplus_wind():
+    # R7 companion: at the identity wind multiplier this file's wind never
+    # clears its load, so expected_recharge_mwh is 0.0 and the budget is 0.0
+    # every day. This is the revised rule working correctly, not a defect.
+    report = _report([])
+    summary = report["summary"]
+    assert summary["severity_reduction"] == pytest.approx(0.0)
 
 
 def test_no_hourly_soc_below_min_soc_at_lossy_efficiency():

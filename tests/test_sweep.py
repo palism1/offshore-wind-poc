@@ -32,7 +32,9 @@ def _stress_day(i: int) -> DayProfile:
     load[17] = 10000.0
     load[18] = 12000.0
     load[19] = 10000.0
-    wind = [500.0] * 24
+    # 9000.0, raised from 500.0 (Week 4B change 7, R7): daily_budget's recharge
+    # term is surplus wind above load, and 500 MW leaves zero surplus here.
+    wind = [9000.0] * 24
     return DayProfile(
         date=date(2026, 1, 10) + timedelta(days=i),
         hourly_load_mw=tuple(load),

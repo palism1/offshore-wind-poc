@@ -31,7 +31,12 @@ def _scenario_body() -> dict:
     }
 
 
-def _days(n: int = 3) -> list[dict]:
+def _days(n: int = 3, *, wind_mw: float = 9000.0) -> list[dict]:
+    # wind_mw default raised from 500.0 to 9000.0 (Week 4B change 7, R7):
+    # daily_budget's recharge term is surplus wind above load, and 500 MW
+    # against an 8,000-12,000 MW load leaves zero surplus, which zeroes the
+    # whole budget under the revised rule. 9000 MW clears load in every hour
+    # except the 10,000-12,000 MW peak triplet, so surplus exists.
     out = []
     for i in range(n):
         load = [8000.0] * 24
@@ -40,7 +45,7 @@ def _days(n: int = 3) -> list[dict]:
             {
                 "date": (date(2026, 1, 10) + timedelta(days=i)).isoformat(),
                 "hourly_load_mw": load,
-                "hourly_wind_mw": [500.0] * 24,
+                "hourly_wind_mw": [wind_mw] * 24,
                 "demand_percentile": 0.95,
                 "wind_forecast_frac": 0.1,
             }
@@ -92,6 +97,17 @@ def test_full_run_flow(client: TestClient):
     assert "reduction in peak severity" in pkg["annotation"]
     assert pkg["payload"]["summary"]["severity_reduction"] > 0
     assert pkg["payload"]["code_version"]  # provenance tag present
+
+
+def test_run_with_no_surplus_wind_discharges_nothing(client: TestClient):
+    # R7: under the revised daily_budget, wind at or below load leaves zero
+    # surplus, which zeroes the recharge term and the whole budget. This is
+    # correct behavior (Component 5's rule), not a defect.
+    sid = client.post("/scenarios", json=_scenario_body()).json()["id"]
+    run = client.post(f"/scenarios/{sid}/runs", json={"days": _days(wind_mw=500.0)})
+    rid = run.json()["id"]
+    results = client.get(f"/runs/{rid}/results").json()
+    assert results["severity_reduction"] == 0
 
 
 def test_stress_windows_endpoint_carries_component3_fields(client: TestClient):
@@ -174,7 +190,10 @@ def test_annotation_says_below_when_the_run_ends_under_the_floor(client: TestCli
     body["storage_total_mwh"] = 1000
     body["storage_start_mwh"] = 100
     sid = client.post("/scenarios", json=body).json()["id"]
-    run = client.post(f"/scenarios/{sid}/runs", json={"days": _days()})
+    # wind_mw=0.0: this test is about the floor annotation, not about surplus-
+    # wind recharge (R7). The default _days() wind (9000.0) would recharge the
+    # reserve back above the floor and defeat the point of this fixture.
+    run = client.post(f"/scenarios/{sid}/runs", json={"days": _days(wind_mw=0.0)})
     rid = run.json()["id"]
     pkg = client.post(f"/runs/{rid}/decision-package").json()
     assert "below its protected floor" in pkg["annotation"]

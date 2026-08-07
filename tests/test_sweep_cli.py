@@ -123,6 +123,28 @@ def test_reference_point_real_and_synthetic(monkeypatch):
     # default to Config.default_efficiency (0.7225). Pinning 1.0 explicitly here
     # keeps this test documenting the original reference-point arithmetic
     # instead of silently tracking whatever the config default becomes.
+    #
+    # --wind-multiplier 15 (real) / 25 (synthetic): Week 4B change 7's revised
+    # daily_budget takes surplus wind above load as its recharge term, and
+    # neither shipped file's wind ever clears its load (R7), which leaves
+    # severity_reduction at 0.0 at the identity multiplier (see the companion
+    # zero-case assertions right below). These multipliers restore surplus so
+    # the pins keep documenting real dispatch, not the no-recharge floor.
+    code, out, err = _run_cli(
+        [
+            "--input", REAL_CSV,
+            "--sizes-mwh", "60000",
+            "--power-mw", "4320",
+            "--efficiency", "1.0",
+            "--wind-multiplier", "15",
+            "--format", "json",
+        ],
+        monkeypatch,
+    )
+    assert code == 0
+    report = json.loads(out)
+    assert report["points"][0]["severity_reduction"] == pytest.approx(0.012936, abs=1e-6)
+
     code, out, err = _run_cli(
         [
             "--input", REAL_CSV,
@@ -135,7 +157,22 @@ def test_reference_point_real_and_synthetic(monkeypatch):
     )
     assert code == 0
     report = json.loads(out)
-    assert report["points"][0]["severity_reduction"] == pytest.approx(0.010633, abs=1e-6)
+    assert report["points"][0]["severity_reduction"] == pytest.approx(0.0, abs=1e-9)
+
+    code, out, err = _run_cli(
+        [
+            "--input", SYNTHETIC_CSV,
+            "--sizes-mwh", "60000",
+            "--power-mw", "4320",
+            "--efficiency", "1.0",
+            "--wind-multiplier", "25",
+            "--format", "json",
+        ],
+        monkeypatch,
+    )
+    assert code == 0
+    report = json.loads(out)
+    assert report["points"][0]["severity_reduction"] == pytest.approx(0.25, abs=1e-9)
 
     code, out, err = _run_cli(
         [
@@ -149,7 +186,7 @@ def test_reference_point_real_and_synthetic(monkeypatch):
     )
     assert code == 0
     report = json.loads(out)
-    assert report["points"][0]["severity_reduction"] == pytest.approx(0.25, abs=1e-9)
+    assert report["points"][0]["severity_reduction"] == pytest.approx(0.0, abs=1e-9)
 
 
 def test_wind_multiplier_flag_changes_the_sweep(monkeypatch):

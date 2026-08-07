@@ -165,6 +165,29 @@ _OPEN_QUESTIONS_STATIC = {
         ),
         "handoff_ref": "docs/source/2026-08-05_Metric_Thresholds_v1.1.pdf",
     },
+    "priority_weighting_retired": {
+        "flags": [],
+        "note": (
+            "Week 4B change 7 replaced budget.daily_budget's priority-weighted "
+            "80% cap with Component 5's two-term minimum. priority() is still "
+            "computed and still ships in DailyResult.priority (D13), because "
+            "the JSON report and the API's run_result_daily table both carry "
+            "it; removing it needs an API break. The team has not said to "
+            "delete it."
+        ),
+        "handoff_ref": "docs/source/2026-08-05_Software_Architecture_Documentation.md Component 5",
+    },
+    "recharge_cycle_basis": {
+        "flags": [],
+        "note": (
+            "budget.daily_budget's recharge term takes remaining_cycles from "
+            "its caller and fixes no definition of a cycle. This engine "
+            "supplies the remaining days of the current window (D14); the "
+            "source's own cycle unit is a stress event, which this branch "
+            "does not implement as the basis."
+        ),
+        "handoff_ref": "docs/source/2026-08-05_Software_Architecture_Documentation.md Component 5",
+    },
     "robustness_metric_definitions": {
         "flags": [],
         "note": (
@@ -697,6 +720,8 @@ def _build_report(
             "surplus wind above the hour's net load, charge and pre-charge alike",
         ),
         _oq("wind_multiplier_range", args.wind_multiplier),
+        _oq("priority_weighting_retired", "report-only, not passed to daily_budget"),
+        _oq("recharge_cycle_basis", "remaining window days"),
     ]
 
     return {
