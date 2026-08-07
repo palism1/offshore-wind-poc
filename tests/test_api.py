@@ -115,7 +115,10 @@ def test_stress_windows_endpoint_carries_component3_fields(client: TestClient):
     assert w["first_hour_index"] == 0
     assert w["last_hour_index"] == 71
     assert w["severity_percentile"] == 0.5
-    assert isinstance(w["threshold_mwh"], float)
+    # Phase 7: the API path now detects on the integer-percentile comparison,
+    # which derives no MWh cut value, so threshold_mwh stays None (see the
+    # models.StressWindow docstring).
+    assert w["threshold_mwh"] is None
     assert w["peak_hourly_load_mw"] == max(
         h for day in _days() for h in day["hourly_load_mw"]
     )

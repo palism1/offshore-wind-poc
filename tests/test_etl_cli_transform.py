@@ -471,9 +471,15 @@ def test_transform_json_keeps_a_winter_with_no_window(tmp_path, capsys):
     path = tmp_path / "load.csv"
     winter_a_dates = [f"2023-01-{d:02d}" for d in range(1, 11)]
     winter_b_dates = [f"2024-01-{d:02d}" for d in range(1, 11)]
-    mw_by_date = {d: 1000.0 for d in winter_a_dates + winter_b_dates}
-    # push winter A's last two days above the rest so a 2-day stress window is
-    # detected there; winter B stays flat and qualifies for no window.
+    mw_by_date = {d: 1000.0 for d in winter_a_dates}
+    # Winter B sits well below winter A's baseline (not tied with it), so its
+    # pooled percentile rank clears no boundary under either detection path
+    # (Phase 7 compares an integer percentile rank, which ties exactly at a
+    # shared value; a value equal to winter A's baseline would land exactly on
+    # the 90th-percentile boundary here and flip winter B stressed too).
+    mw_by_date.update({d: 100.0 for d in winter_b_dates})
+    # push winter A's last two days above the rest so a stress window is
+    # detected there; winter B stays low and qualifies for no window.
     mw_by_date[winter_a_dates[-1]] = 5000.0
     mw_by_date[winter_a_dates[-2]] = 5000.0
     _write_fixture(path, winter_a_dates + winter_b_dates, mw_by_date)

@@ -39,7 +39,7 @@ from owr.metrics import recharge_capacity_mismatch_fraction as _recharge_capacit
 from owr.metrics import recharge_opportunity_mw as _recharge_opportunity_mw
 from owr.models import HOURS_PER_DAY, DayProfile, StorageAsset, StressWindow
 from owr.simulator import simulate
-from owr.stress_finder import find_stress_windows, with_peak_hourly_load
+from owr.stress_finder import find_stress_windows_at_percentile, with_peak_hourly_load
 from owr.version import code_version
 
 # Reporting-only assumption: no engine function takes it, so it is not a Config
@@ -280,8 +280,11 @@ def build_parser() -> argparse.ArgumentParser:
         type=_finite_float,
         default=cfg.default_severity_percentile,
         help=(
-            f"stress-day percentile threshold (default {cfg.default_severity_percentile}, "
-            "sourced: Architecture 2026-08-05 Component 3) [OPEN: stress_event_definition]"
+            f"stress-day percentile threshold, as a FRACTION 0 to 1 (default "
+            f"{cfg.default_severity_percentile}, sourced: Architecture 2026-08-05 "
+            "Component 3). The comparison itself runs on the day's percentile "
+            "as an integer percent (Phase 7, change 3), per config.PercentileRounding. "
+            "[OPEN: stress_event_definition]"
         ),
     )
     parser.add_argument(
@@ -430,7 +433,15 @@ def _run(args: argparse.Namespace) -> int:
         default_smooth_weight=args.smooth_weight,
     )
 
-    windows = find_stress_windows(days, args.severity_percentile, args.min_stress_window_days)
+    # Phase 7 (change 3): integer-percentile comparison, not the MWh quantile.
+    # percentile_floor_percent = round(x * 100.0, 9) is D1's guard against the
+    # float trap (0.29 * 100.0 == 28.999999999999996).
+    windows = find_stress_windows_at_percentile(
+        days,
+        args.min_stress_window_days,
+        percentile_floor_percent=round(args.severity_percentile * 100.0, 9),
+        rounding=cfg.stress_percentile_rounding,
+    )
     windows = with_peak_hourly_load(windows, days)
 
     if args.list_windows:

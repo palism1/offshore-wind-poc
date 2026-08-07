@@ -136,9 +136,15 @@ class StressWindow:
         (the fraction, 0.90 by default). The field name points at the MWh cut value
         applied to the day totals. This repo already models both, as
         ``owr.etl.transform.ThresholdResult.percentile`` and ``.threshold_mwh``, so
-        both travel with the window. ``threshold_mwh`` is set on every detection
-        path. ``severity_percentile`` is ``None`` when the caller supplied a
-        threshold directly and never named a percentile, which is the ETL path.
+        both travel with the window. ``threshold_mwh`` is set on every MWh
+        detection path (``find_stress_windows_at_threshold`` and its callers).
+        ``severity_percentile`` is ``None`` when the caller supplied a threshold
+        directly and never named a percentile, which is the ETL path. On the
+        Phase 6/7 percentile-comparison path
+        (``stress_finder.find_stress_windows_at_percentile``), the comparison
+        never derives an MWh cut value, so ``threshold_mwh`` stays ``None`` and
+        ``severity_percentile`` carries the floor fraction instead
+        (``percentile_floor_percent / 100.0``).
 
     peak_hourly_load_mw
         The highest single-hour gross load over every hour of every day in the
@@ -217,6 +223,16 @@ class HourlyLoadLike(Protocol):
 
     date: date
     hourly_load_mw: tuple[float, ...]
+
+
+class DailyPercentileLike(Protocol):
+    """What the Component 3 percentile-comparison rule needs: a date and the
+    day's load percentile as a FRACTION, 0 to 1. ``DayProfile`` satisfies this
+    through ``demand_percentile``. Not marked ``runtime_checkable``, for the
+    reason ``DailyLoadLike`` is not."""
+
+    date: date
+    demand_percentile: float
 
 
 class WrapConvention(StrEnum):

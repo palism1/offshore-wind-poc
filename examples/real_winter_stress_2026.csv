@@ -18,9 +18,13 @@
 # NOTE  wind is about 5% of ISO-NE system load in this window, 45 to 1,675 MW against
 #       14,341 to 20,127 MW. simulate's surplus-wind recharge is therefore 0.0 MWh in
 #       every hour. Pre-event charging through --lead-days does use these values.
-# NOTE  simulate recomputes its own percentile from this file alone. At the default
-#       --severity-percentile 0.90 it reports no window inside a short file. Pass
-#       --severity-percentile 0 to see the whole file as the one event.
+# NOTE  simulate compares each day's demand_percentile (this file's column, a
+#       fraction) against --severity-percentile as an INTEGER percent (Phase 7,
+#       change 3, config.PercentileRounding). Every row here carries the same
+#       0.940741 rank, above the default 0.90 floor, so --list-windows reports
+#       the whole 11-day file as one event by default.
+# NOTE  Banner NOTE lines are maintained by hand; the data rows come from
+#       etl demo-profile.
 # source = eia930.isne.wind  dataset_version = gridstatus==0.36.0  retrieved_at = 2026-08-06T03:08:39.814003+00:00
 # source_query = gridstatus.EIA().get_dataset('electricity/rto/fuel-type-data', start=2025-12-01, end=2026-02-28, frequency=hourly, facets={respondent=ISNE, fueltype=WND})
 # source = gridstatus.isone.load  dataset_version = gridstatus==0.36.0  retrieved_at = 2026-07-30T18:21:25.067349+00:00

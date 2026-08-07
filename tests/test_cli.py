@@ -510,7 +510,10 @@ def test_list_windows_json_carries_the_component3_fields(capsys):
     assert w["first_hour_index"] == 0
     assert w["last_hour_index"] == 24 * w["days"] - 1
     assert w["severity_percentile"] == DEFAULT_CONFIG.default_severity_percentile
-    assert w["threshold_mwh"] > 0
+    # Phase 7: the simulate CLI now detects on the integer-percentile
+    # comparison, which derives no MWh cut value, so threshold_mwh stays None
+    # (see the models.StressWindow docstring).
+    assert w["threshold_mwh"] is None
 
 
 def test_peak_hourly_load_matches_the_file(capsys):

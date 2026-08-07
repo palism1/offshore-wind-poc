@@ -181,8 +181,16 @@ def _run_transform(
     events: pd.DataFrame | None
     labels: tuple[str, ...]
     if season == Season.WINTER:
+        # D3a/D1: use_percentile=True switches to the integer-percentile
+        # comparison path (Phase 7). The floor tracks --percentile so the
+        # percentile-based detection agrees with the MWh threshold on which
+        # percentile counts as stressed; round(x * 100.0, 9) is D1's guard
+        # against the float trap (0.29 * 100.0 == 28.999999999999996).
         events = find_windows_per_winter(
-            frame, threshold_mwh=threshold.threshold_mwh, min_window_days=args.min_window_days
+            frame,
+            min_window_days=args.min_window_days,
+            use_percentile=True,
+            percentile_floor_percent=round(args.percentile * 100.0, 9),
         )
         labels = winter_labels(frame)
     else:

@@ -29,7 +29,11 @@ from owr.api.store import InMemoryRepository, Repository, RunRecord
 from owr.config import DEFAULT_CONFIG
 from owr.models import DayProfile, StorageAsset, StressWindow
 from owr.simulator import simulate
-from owr.stress_finder import find_stress_windows, with_demand_percentile, with_peak_hourly_load
+from owr.stress_finder import (
+    find_stress_windows_at_percentile,
+    with_demand_percentile,
+    with_peak_hourly_load,
+)
 from owr.version import code_version
 
 
@@ -218,8 +222,16 @@ def create_app(repo: Repository | None = None) -> FastAPI:
             if days and all(d.demand_percentile == 0.0 for d in days):
                 days = with_demand_percentile(days)
             asset = _asset(inp)
+            # Phase 7 (change 3): integer-percentile comparison, not the MWh
+            # quantile. round(x * 100.0, 9) is D1's guard against the float
+            # trap (0.29 * 100.0 == 28.999999999999996).
             run.stress_windows = with_peak_hourly_load(
-                find_stress_windows(days, inp.severity_percentile, inp.min_stress_window_days),
+                find_stress_windows_at_percentile(
+                    days,
+                    inp.min_stress_window_days,
+                    percentile_floor_percent=round(inp.severity_percentile * 100.0, 9),
+                    rounding=DEFAULT_CONFIG.stress_percentile_rounding,
+                ),
                 days,
             )
             starting_soc = (

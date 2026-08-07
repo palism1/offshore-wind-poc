@@ -10,10 +10,12 @@ import numpy
 import pytest
 
 from owr.etl.demo_profile import percentile_ranks
-from owr.models import HOURS_PER_DAY, DayProfile, StressWindow
+from owr.models import HOURS_PER_DAY, DayProfile, PercentileRounding, StressWindow
 from owr.stress_finder import (
     find_stress_windows,
+    find_stress_windows_at_percentile,
     find_stress_windows_at_threshold,
+    integer_percentile_from_fraction,
     percentile_rank_percent,
     percentile_threshold,
     with_demand_percentile,
@@ -314,3 +316,118 @@ def test_with_demand_percentile_defaults_to_the_series_itself():
     assert result[0].demand_percentile == pytest.approx(1 / 3)
     assert result[1].demand_percentile == pytest.approx(2 / 3)
     assert result[2].demand_percentile == pytest.approx(3 / 3)
+
+
+# --------------------------------------------------------------------------- #
+# Phase 7: integer percentile comparison (change 3)
+# --------------------------------------------------------------------------- #
+
+
+def _day_pct(day_index: int, demand_percentile: float) -> DayProfile:
+    return DayProfile(
+        date=date(2026, 1, 1) + timedelta(days=day_index),
+        hourly_load_mw=(100.0,) * HOURS_PER_DAY,
+        demand_percentile=demand_percentile,
+    )
+
+
+def test_integer_percentile_floor_at_the_float_trap():
+    # 0.29 * 100.0 is 28.999999999999996 in IEEE 754 double; a bare floor
+    # returns 28. The round-to-9 guard must return 29.
+    assert integer_percentile_from_fraction(0.29, PercentileRounding.FLOOR) == 29
+    assert integer_percentile_from_fraction(0.9, PercentileRounding.FLOOR) == 90
+
+
+def test_integer_percentile_round_half_even():
+    assert integer_percentile_from_fraction(0.895, PercentileRounding.ROUND_HALF_EVEN) == 90
+    assert integer_percentile_from_fraction(0.905, PercentileRounding.ROUND_HALF_EVEN) == 90
+
+
+def test_integer_percentile_rejects_a_percent_value():
+    # B4 guard: a caller that forgot to divide a percent value by 100 would
+    # otherwise compute 9407 and mark every day stressed.
+    with pytest.raises(ValueError):
+        integer_percentile_from_fraction(94.07, PercentileRounding.FLOOR)
+
+
+def test_percentile_detection_matches_threshold_detection_on_tied_data():
+    # DEMO.md Act 2 guard: the tied synthetic fixture must detect the same
+    # single three-day window under both the MWh-threshold path and the
+    # integer-percentile path.
+    loads = [10.0, 100.0, 100.0, 100.0, 10.0]
+    days = [_day(i, loads[i]) for i in range(5)]
+    stamped = with_demand_percentile(days)
+    threshold = percentile_threshold([d.load_mwh for d in days], 0.9)
+
+    at_threshold = find_stress_windows_at_threshold(days, threshold, min_window_days=3)
+    at_percentile = find_stress_windows_at_percentile(
+        stamped, min_window_days=3, percentile_floor_percent=90.0
+    )
+    assert len(at_threshold) == len(at_percentile) == 1
+    assert at_threshold[0].start == at_percentile[0].start
+    assert at_threshold[0].end == at_percentile[0].end
+    assert at_threshold[0].days == at_percentile[0].days == 3
+
+
+def test_percentile_detection_and_threshold_detection_can_disagree_without_ties():
+    # count(p <= v) / n (the percentile-rank estimator) and numpy.quantile (the
+    # MWh-threshold estimator) are different estimators; they need not agree
+    # on data with no ties (R1). This pins whatever the two produce today, not
+    # agreement between them.
+    loads = [10.0 * (i + 1) for i in range(10)]
+    days = [_day(i, loads[i]) for i in range(10)]
+    stamped = with_demand_percentile(days)
+    threshold = percentile_threshold([d.load_mwh for d in days], 0.9)
+
+    at_threshold = find_stress_windows_at_threshold(days, threshold, min_window_days=1)
+    at_percentile = find_stress_windows_at_percentile(
+        stamped, min_window_days=1, percentile_floor_percent=90.0
+    )
+    assert [(w.start, w.end) for w in at_threshold] == [(date(2026, 1, 10), date(2026, 1, 10))]
+    assert [(w.start, w.end) for w in at_percentile] == [
+        (date(2026, 1, 9), date(2026, 1, 10))
+    ]
+
+
+def test_percentile_detection_splits_a_run_on_a_date_gap():
+    days = [
+        _day_pct(0, 0.95),
+        _day_pct(1, 0.95),
+        # gap: day index 4 instead of 2, so the date is 2026-01-05, not -03
+    ]
+    days.append(
+        DayProfile(
+            date=date(2026, 1, 5),
+            hourly_load_mw=(100.0,) * HOURS_PER_DAY,
+            demand_percentile=0.95,
+        )
+    )
+    days.append(
+        DayProfile(
+            date=date(2026, 1, 6),
+            hourly_load_mw=(100.0,) * HOURS_PER_DAY,
+            demand_percentile=0.95,
+        )
+    )
+    windows = find_stress_windows_at_percentile(
+        days, min_window_days=2, percentile_floor_percent=90.0
+    )
+    assert len(windows) == 2
+    assert (windows[0].start, windows[0].end) == (date(2026, 1, 1), date(2026, 1, 2))
+    assert (windows[1].start, windows[1].end) == (date(2026, 1, 5), date(2026, 1, 6))
+
+
+def test_percentile_detection_records_the_floor_as_a_fraction():
+    days = [_day_pct(0, 0.95), _day_pct(1, 0.95)]
+    windows = find_stress_windows_at_percentile(
+        days, min_window_days=2, percentile_floor_percent=90.0
+    )
+    assert windows[0].severity_percentile == pytest.approx(0.9)
+
+
+def test_percentile_detection_leaves_threshold_mwh_none():
+    days = [_day_pct(0, 0.95), _day_pct(1, 0.95)]
+    windows = find_stress_windows_at_percentile(
+        days, min_window_days=2, percentile_floor_percent=90.0
+    )
+    assert windows[0].threshold_mwh is None

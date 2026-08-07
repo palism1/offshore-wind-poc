@@ -224,3 +224,46 @@ def test_with_load_percentile_raises_when_the_season_has_no_complete_days():
     days = [_day(date(2022, 7, 1 + i), 100_000.0, complete=False) for i in range(3)]
     with pytest.raises(ValueError, match="no complete winter days"):
         with_load_percentile(_frame(days), season=Season.WINTER)
+
+
+# --------------------------------------------------------------------------- #
+# Phase 7: find_windows_per_winter(use_percentile=True)
+# --------------------------------------------------------------------------- #
+
+
+def test_find_windows_per_winter_percentile_path_converts_percent_to_fraction():
+    # 94.07 is above 1.0 and below 100: a fixture at 90.0 would not expose a
+    # missing percent-to-fraction conversion (B4), because both readings mark
+    # it stressed. Under a missing conversion this raises (the guard in
+    # integer_percentile_from_fraction); under the correct conversion
+    # (94.07 / 100 = 0.9407) the day is stressed.
+    frame = pd.DataFrame(
+        {
+            "date": [date(2021, 12, 1), date(2021, 12, 2)],
+            "complete": [True, True],
+            "winter_label": ["2021/22", "2021/22"],
+            "load_percentile": [94.07, 94.07],
+        }
+    )
+    events = find_windows_per_winter(
+        frame, min_window_days=2, use_percentile=True, percentile_floor_percent=90.0
+    )
+    assert len(events.index) == 1
+    assert events.iloc[0]["event_duration_days"] == 2
+
+
+def test_find_windows_per_winter_percentile_path_matches_the_threshold_path():
+    days = [_day(date(2021, 12, 1 + i), 10_000.0) for i in range(8)]
+    days[6] = _day(date(2021, 12, 7), 50_000.0)
+    days[7] = _day(date(2021, 12, 8), 50_000.0)
+    frame = with_load_percentile(_frame(days), season=Season.WINTER)
+    threshold = compute_threshold(frame, percentile=0.9, season=Season.WINTER)
+
+    at_threshold = find_windows_per_winter(
+        frame, threshold_mwh=threshold.threshold_mwh, min_window_days=2
+    )
+    at_percentile = find_windows_per_winter(
+        frame, min_window_days=2, use_percentile=True, percentile_floor_percent=90.0
+    )
+    assert list(at_threshold["event_start_date"]) == list(at_percentile["event_start_date"])
+    assert list(at_threshold["event_end_date"]) == list(at_percentile["event_end_date"])

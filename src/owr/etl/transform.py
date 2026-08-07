@@ -31,7 +31,12 @@ import pandas as pd
 
 from owr.etl.daily import DAILY_CORE_COLUMNS
 from owr.etl.seasons import Season, season_for, winter_label
-from owr.stress_finder import find_stress_windows_at_threshold, percentile_threshold
+from owr.models import PercentileRounding
+from owr.stress_finder import (
+    find_stress_windows_at_percentile,
+    find_stress_windows_at_threshold,
+    percentile_threshold,
+)
 
 DAILY_FRAME_COLUMNS: tuple[str, ...] = DAILY_CORE_COLUMNS + (
     "season", "winter_label", "load_percentile",
@@ -153,8 +158,26 @@ class _DailyPoint(NamedTuple):
     load_mwh: float
 
 
+class _DailyPercentilePoint(NamedTuple):
+    """A minimal ``DailyPercentileLike`` built from one event-frame row.
+
+    ``demand_percentile`` is a FRACTION, 0 to 1; the frame's ``load_percentile``
+    column is percent, 0 to 100 (D3a). The division below is the single
+    conversion site in the repo; do not inline the divide anywhere else.
+    """
+
+    date: date
+    demand_percentile: float
+
+
 def find_windows_per_winter(
-    daily: pd.DataFrame, *, threshold_mwh: float, min_window_days: int
+    daily: pd.DataFrame,
+    *,
+    threshold_mwh: float | None = None,
+    min_window_days: int,
+    use_percentile: bool = False,
+    percentile_floor_percent: float = 90.0,
+    rounding: PercentileRounding = PercentileRounding.FLOOR,
 ) -> pd.DataFrame:
     """The Component 3 event table: one row per stress window, grouped by winter.
 
@@ -165,17 +188,40 @@ def find_windows_per_winter(
 
     The doc calls the identifier ``winter_id`` and describes it as a hash. This
     repo has a readable label and no hash; ``winter_label`` stays, and no
-    ``event_id`` column is added.
+    ``event_id`` column is added (D15 supersedes this in Phase 8, which adds a
+    per-run integer id).
+
+    ``use_percentile`` (Phase 7, change 3) selects the MWh-threshold detection
+    path (default, ``find_stress_windows_at_threshold``) or the integer-percentile
+    comparison path (``find_stress_windows_at_percentile``, requires the frame's
+    ``load_percentile`` column from :func:`with_load_percentile`). Default False,
+    so a caller that does not pass it keeps the MWh path and its existing tests
+    unmoved. ``threshold_mwh`` is required when ``use_percentile`` is False and
+    ignored when it is True.
     """
     complete = daily[daily["complete"] & daily["winter_label"].notna()]
 
     winter_frames: list[pd.DataFrame] = []
     for label, group in complete.groupby("winter_label"):
         ordered = group.sort_values("date")
-        points = [
-            _DailyPoint(date=row.date, load_mwh=row.load_mwh) for row in ordered.itertuples()
-        ]
-        windows = find_stress_windows_at_threshold(points, threshold_mwh, min_window_days)
+        if use_percentile:
+            percentile_points = [
+                _DailyPercentilePoint(date=row.date, demand_percentile=row.load_percentile / 100.0)
+                for row in ordered.itertuples()
+            ]
+            windows = find_stress_windows_at_percentile(
+                percentile_points,
+                min_window_days,
+                percentile_floor_percent=percentile_floor_percent,
+                rounding=rounding,
+            )
+        else:
+            if threshold_mwh is None:
+                raise ValueError("threshold_mwh is required when use_percentile is False")
+            points = [
+                _DailyPoint(date=row.date, load_mwh=row.load_mwh) for row in ordered.itertuples()
+            ]
+            windows = find_stress_windows_at_threshold(points, threshold_mwh, min_window_days)
         for w in windows:
             winter_frames.append(
                 {
