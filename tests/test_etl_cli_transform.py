@@ -436,7 +436,7 @@ def test_transform_out_writes_daily_csv(tmp_path, capsys):
     header = out_path.read_text().splitlines()[0]
     assert header == (
         "date,load_mwh,hours_covered,expected_hours,intervals,complete,season,"
-        "winter_label,load_percentile"
+        "winter_label,winter_id,load_percentile"
     )
     lines = out_path.read_text().splitlines()
     assert len(lines) == 1 + len(dates)
@@ -459,10 +459,10 @@ def test_transform_out_daily_csv_is_byte_identical_to_the_expected_text(tmp_path
     assert code == 0
     expected = (
         b"date,load_mwh,hours_covered,expected_hours,intervals,complete,season,"
-        b"winter_label,load_percentile\r\n"
-        b"2023-01-01,24000.0,24.0,24.0,24,True,winter,2022/23,100.0\r\n"
-        b"2023-01-02,24000.0,24.0,24.0,24,True,winter,2022/23,100.0\r\n"
-        b"2023-01-03,24000.0,24.0,24.0,24,True,winter,2022/23,100.0\r\n"
+        b"winter_label,winter_id,load_percentile\r\n"
+        b"2023-01-01,24000.0,24.0,24.0,24,True,winter,2022/23,1,100.0\r\n"
+        b"2023-01-02,24000.0,24.0,24.0,24,True,winter,2022/23,1,100.0\r\n"
+        b"2023-01-03,24000.0,24.0,24.0,24,True,winter,2022/23,1,100.0\r\n"
     )
     assert out_path.read_bytes() == expected
 

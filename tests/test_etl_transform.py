@@ -145,6 +145,8 @@ def test_event_frame_columns_and_dtypes():
     assert tuple(events.columns) == EVENT_FRAME_COLUMNS
     assert events["winter_label"].dtype == object
     assert events["event_duration_days"].dtype == "int64"
+    assert events["event_id"].dtype == "Int64"
+    assert events["winter_id"].dtype == "Int64"
     assert isinstance(events["event_start_date"].iloc[0], date)
     assert isinstance(events["event_end_date"].iloc[0], date)
 
@@ -155,6 +157,59 @@ def test_event_frame_is_empty_with_declared_columns_when_no_run_qualifies():
     assert len(events.index) == 0
     assert tuple(events.columns) == EVENT_FRAME_COLUMNS
     assert events["event_duration_days"].dtype == "int64"
+
+
+# --------------------------------------------------------------------------- #
+# Phase 8a: event_id / winter_id (D15)
+# --------------------------------------------------------------------------- #
+
+
+def test_event_ids_are_one_based_and_dense():
+    winter_a = [_day(date(2021, 12, 1 + i), 500_000.0) for i in range(3)]
+    winter_b = [_day(date(2022, 12, 1 + i), 500_000.0) for i in range(3)]
+    events = find_windows_per_winter(
+        _frame(winter_a + winter_b), threshold_mwh=400_000.0, min_window_days=2
+    )
+    assert list(events["event_id"]) == list(range(1, len(events.index) + 1))
+
+
+def test_event_ids_are_stable_under_input_row_order():
+    winter_a = [_day(date(2021, 12, 1 + i), 500_000.0) for i in range(3)]
+    winter_b = [_day(date(2022, 12, 1 + i), 500_000.0) for i in range(3)]
+    forward = find_windows_per_winter(
+        _frame(winter_a + winter_b), threshold_mwh=400_000.0, min_window_days=2
+    )
+    shuffled = find_windows_per_winter(
+        _frame(list(reversed(winter_a + winter_b))), threshold_mwh=400_000.0, min_window_days=2
+    )
+    assert list(forward["event_id"]) == list(shuffled["event_id"])
+    assert list(forward["winter_label"]) == list(shuffled["winter_label"])
+
+
+def test_winter_id_matches_winter_label_ordering():
+    winter_a = [_day(date(2021, 12, 1 + i), 500_000.0) for i in range(3)]
+    winter_b = [_day(date(2022, 12, 1 + i), 500_000.0) for i in range(3)]
+    daily = _frame(winter_a + winter_b)
+    assert int(daily[daily["winter_label"] == "2021/22"]["winter_id"].iloc[0]) == 1
+    assert int(daily[daily["winter_label"] == "2022/23"]["winter_id"].iloc[0]) == 2
+
+
+def test_winter_id_is_the_same_in_both_frames():
+    winter_a = [_day(date(2021, 12, 1 + i), 500_000.0) for i in range(3)]
+    winter_b = [_day(date(2022, 12, 1 + i), 500_000.0) for i in range(3)]
+    daily = _frame(winter_a + winter_b)
+    events = find_windows_per_winter(daily, threshold_mwh=400_000.0, min_window_days=2)
+    daily_winter_id = int(daily[daily["winter_label"] == "2021/22"]["winter_id"].iloc[0])
+    event_winter_id = int(events[events["winter_label"] == "2021/22"]["winter_id"].iloc[0])
+    assert daily_winter_id == event_winter_id
+
+
+def test_empty_event_frame_carries_both_id_columns_with_the_right_dtypes():
+    days = [_day(date(2021, 12, 1 + i), 10_000.0) for i in range(3)]
+    events = find_windows_per_winter(_frame(days), threshold_mwh=400_000.0, min_window_days=2)
+    assert len(events.index) == 0
+    assert events["event_id"].dtype == "Int64"
+    assert events["winter_id"].dtype == "Int64"
 
 
 def test_threshold_result_fields_are_builtin_floats():
@@ -242,6 +297,7 @@ def test_find_windows_per_winter_percentile_path_converts_percent_to_fraction():
             "date": [date(2021, 12, 1), date(2021, 12, 2)],
             "complete": [True, True],
             "winter_label": ["2021/22", "2021/22"],
+            "winter_id": pd.array([1, 1], dtype="Int64"),
             "load_percentile": [94.07, 94.07],
         }
     )

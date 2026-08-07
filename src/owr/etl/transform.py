@@ -22,6 +22,7 @@ rendering below is pandas.
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import date
 from typing import NamedTuple
@@ -39,11 +40,12 @@ from owr.stress_finder import (
 )
 
 DAILY_FRAME_COLUMNS: tuple[str, ...] = DAILY_CORE_COLUMNS + (
-    "season", "winter_label", "load_percentile",
+    "season", "winter_label", "winter_id", "load_percentile",
 )
 
 EVENT_FRAME_COLUMNS: tuple[str, ...] = (
-    "winter_label", "event_start_date", "event_end_date", "event_duration_days",
+    "event_id", "winter_id", "winter_label",
+    "event_start_date", "event_end_date", "event_duration_days",
 )
 
 
@@ -59,8 +61,28 @@ class ThresholdResult:
     max_mwh: float
 
 
+def winter_id_map(labels: Iterable[str | None]) -> dict[str, int]:
+    """One-based integer id per distinct winter label, sorted, ``None`` dropped.
+
+    D15: the source calls both ``event_id`` and ``winter_id`` "hash value
+    identifier"; this repo emits stable per-run integers from a deterministic
+    sort instead. ``add_season_columns`` builds this map once from the full set
+    of labels the input frame carries and stamps ``winter_id`` onto the daily
+    frame. :func:`find_windows_per_winter` then reads each group's ``winter_id``
+    straight off its daily rows rather than re-deriving the map, so the daily
+    frame and the event frame can never disagree (one shared map, not two
+    independent enumerations). See OPEN team question ``identifier_scheme``.
+    """
+    distinct = sorted({label for label in labels if label is not None})
+    return {label: i + 1 for i, label in enumerate(distinct)}
+
+
 def add_season_columns(frame: pd.DataFrame) -> pd.DataFrame:
-    """Return a new frame with ``season`` and ``winter_label`` appended.
+    """Return a new frame with ``season``, ``winter_label`` and ``winter_id`` appended.
+
+    ``winter_id`` uses the nullable ``Int64`` dtype, not ``float64``: a
+    ``NaN``-carrying ``float64`` column prints ``1.0`` in the CSV and the JSON,
+    and the source calls this an identifier (D15).
 
     Never mutates the input. The architecture doc's Global Interface Contract says a
     component shall never modify another component's output.
@@ -69,8 +91,11 @@ def add_season_columns(frame: pd.DataFrame) -> pd.DataFrame:
     out["season"] = pd.Series(
         [season_for(d).value for d in frame["date"]], index=frame.index, dtype="object"
     )
-    out["winter_label"] = pd.Series(
-        [winter_label(d) for d in frame["date"]], index=frame.index, dtype="object"
+    labels = [winter_label(d) for d in frame["date"]]
+    out["winter_label"] = pd.Series(labels, index=frame.index, dtype="object")
+    id_map = winter_id_map(labels)
+    out["winter_id"] = pd.Series(
+        [id_map.get(label) for label in labels], index=frame.index, dtype="Int64"
     )
     return out
 
@@ -186,10 +211,13 @@ def find_windows_per_winter(
     joins the two. Do not try to recover the label set from the event frame; that
     is the defect docs/archive/plans/PLAN_PANDAS_ADOPTION.md revision 1 fixes (finding B1).
 
-    The doc calls the identifier ``winter_id`` and describes it as a hash. This
-    repo has a readable label and no hash; ``winter_label`` stays, and no
-    ``event_id`` column is added (D15 supersedes this in Phase 8, which adds a
-    per-run integer id).
+    The doc calls both ``event_id`` and ``winter_id`` "hash value identifier".
+    This repo emits stable per-run integers instead (D15): ``winter_id`` is read
+    straight off the input frame's ``winter_id`` column (one shared map, built
+    once by :func:`add_season_columns`, per D15), and ``event_id`` is assigned
+    1-based after the final sort below on ``(winter_label, event_start_date)``.
+    Neither id carries cross-run meaning and no database sequence backs them
+    (OPEN team question ``identifier_scheme``).
 
     ``use_percentile`` (Phase 7, change 3) selects the MWh-threshold detection
     path (default, ``find_stress_windows_at_threshold``) or the integer-percentile
@@ -204,6 +232,7 @@ def find_windows_per_winter(
     winter_frames: list[pd.DataFrame] = []
     for label, group in complete.groupby("winter_label"):
         ordered = group.sort_values("date")
+        group_winter_id = int(ordered["winter_id"].iloc[0])
         if use_percentile:
             percentile_points = [
                 _DailyPercentilePoint(date=row.date, demand_percentile=row.load_percentile / 100.0)
@@ -225,6 +254,7 @@ def find_windows_per_winter(
         for w in windows:
             winter_frames.append(
                 {
+                    "winter_id": group_winter_id,
                     "winter_label": label,
                     "event_start_date": w.start,
                     "event_end_date": w.end,
@@ -235,6 +265,8 @@ def find_windows_per_winter(
     if not winter_frames:
         return pd.DataFrame(
             {
+                "event_id": pd.Series([], dtype="Int64"),
+                "winter_id": pd.Series([], dtype="Int64"),
                 "winter_label": pd.Series([], dtype="object"),
                 "event_start_date": pd.Series([], dtype="object"),
                 "event_end_date": pd.Series([], dtype="object"),
@@ -243,6 +275,10 @@ def find_windows_per_winter(
             columns=list(EVENT_FRAME_COLUMNS),
         )
 
-    events = pd.DataFrame(winter_frames, columns=list(EVENT_FRAME_COLUMNS))
+    event_columns = [c for c in EVENT_FRAME_COLUMNS if c != "event_id"]
+    events = pd.DataFrame(winter_frames, columns=event_columns)
+    events["winter_id"] = events["winter_id"].astype("Int64")
     events["event_duration_days"] = events["event_duration_days"].astype("int64")
-    return events.sort_values(["winter_label", "event_start_date"]).reset_index(drop=True)
+    events = events.sort_values(["winter_label", "event_start_date"]).reset_index(drop=True)
+    events.insert(0, "event_id", pd.array(range(1, len(events) + 1), dtype="Int64"))
+    return events[list(EVENT_FRAME_COLUMNS)]

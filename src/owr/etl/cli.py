@@ -691,7 +691,7 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         metavar="PATH",
         help="also write the per-day rollup (date, load_mwh, hours_covered, "
-        "expected_hours, intervals, complete, season, winter_label, "
+        "expected_hours, intervals, complete, season, winter_label, winter_id, "
         "load_percentile) to this CSV",
     )
     transform_p.add_argument(
