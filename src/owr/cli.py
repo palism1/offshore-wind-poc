@@ -140,6 +140,32 @@ _OPEN_QUESTIONS_STATIC = {
         ),
         "handoff_ref": "docs/archive/plans/PLAN_REVIEW_FIXES.md Phase 5",
     },
+    "zone_band_gaps": {
+        "flags": [],
+        "note": (
+            "The Metric Thresholds v1.1 source tables leave real gaps and one "
+            "overlap: CMDR leaves 0 < x < 5 and 19 < x < 20 unstated, SWE leaves "
+            "2.9 < x < 3.0, FOP leaves 4.9 < x < 5.0, and RCM claims +-5.0 twice, "
+            "in Acceptable and in Warning. robustness.py closes the Acceptable "
+            "and Failure bands at their stated bounds and lets Warning absorb "
+            "every gap; RCM's double claim resolves to Acceptable (D7)."
+        ),
+        "handoff_ref": "docs/source/2026-08-05_Metric_Thresholds_v1.1.pdf",
+    },
+    "robustness_metric_definitions": {
+        "flags": [],
+        "note": (
+            "The FOP zone band in the Metric Thresholds PDF is calibrated "
+            "against that document's own formula, (Sum(wind) + "
+            "Sum(capacity_dispatched)) / Sum(total_generation) * 100, which is "
+            "not the formula metrics.fuel_offset_fraction implements (the "
+            "architecture doc's fuel_fired_generation_offset / "
+            "total_generation, a different quantity that can be negative). "
+            "robustness.EventMetrics.fop_percent comes from the caller, so "
+            "robustness.py never picks a formula; see risk R6."
+        ),
+        "handoff_ref": "docs/source/2026-08-05_Metric_Thresholds_v1.1.pdf",
+    },
 }
 
 
