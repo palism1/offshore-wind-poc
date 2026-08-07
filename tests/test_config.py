@@ -70,6 +70,24 @@ def test_config_defaults_match_scenario_create_defaults():
     assert cfg.default_smooth_weight == scenario.smooth_weight
 
 
+def test_default_efficiency_is_the_team_decision():
+    """Week 4B change 10: 0.85 * 0.85 = 0.7225, Report B's 0.85 read as a
+    per-leg figure and squared to the round-trip figure Config.default_efficiency
+    takes. See config.py's default_efficiency docstring entry."""
+    assert Config().default_efficiency == pytest.approx(0.7225)
+
+
+def test_config_and_api_efficiency_defaults_diverge_on_purpose():
+    """Unlike test_config_defaults_match_scenario_create_defaults above, this pair
+    is meant to diverge: Config.default_efficiency moved to 0.7225 (Week 4B change
+    10) while StorageAsset.efficiency and ScenarioCreate.efficiency stay 1.0, per
+    the task scope named in config.py's default_efficiency entry."""
+    cfg = Config()
+    scenario = _scenario_defaults()
+    assert cfg.default_efficiency != scenario.efficiency
+    assert scenario.efficiency == 1.0
+
+
 def test_default_severity_percentile_is_0_90():
     """Pins the 2026-07-28 decision (HANDOFF.md decision 2): stress-event
     identification is settled at daily total demand >= the historical 90th

@@ -119,11 +119,16 @@ def test_table_output_has_one_row_per_size_and_code_version(monkeypatch):
 
 
 def test_reference_point_real_and_synthetic(monkeypatch):
+    # --efficiency 1.0: Week 4B change 10 moved the CLI's own --efficiency
+    # default to Config.default_efficiency (0.7225). Pinning 1.0 explicitly here
+    # keeps this test documenting the original reference-point arithmetic
+    # instead of silently tracking whatever the config default becomes.
     code, out, err = _run_cli(
         [
             "--input", REAL_CSV,
             "--sizes-mwh", "60000",
             "--power-mw", "4320",
+            "--efficiency", "1.0",
             "--format", "json",
         ],
         monkeypatch,
@@ -137,6 +142,7 @@ def test_reference_point_real_and_synthetic(monkeypatch):
             "--input", SYNTHETIC_CSV,
             "--sizes-mwh", "60000",
             "--power-mw", "4320",
+            "--efficiency", "1.0",
             "--format", "json",
         ],
         monkeypatch,

@@ -23,7 +23,7 @@ uv sync --extra etl --extra api --extra viz
 uv run pytest
 ```
 
-Expect: `622 passed, 4 skipped`. The 4 skips need a live Postgres and are
+Expect: `731 passed, 4 skipped`. The 4 skips need a live Postgres and are
 covered in the optional act.
 
 ## Act 2 — stress-window detection
@@ -62,9 +62,9 @@ Expect, in the report:
 | Line | Value |
 |---|---|
 | Pre-event charging | 60,000 MWh -> 60,000 MWh over 1 lead day |
-| Severity reduction | 1.1% |
-| Energy discharged | 40,633 MWh |
-| Equivalent full cycles | 0.677 |
+| Severity reduction | 1.0% |
+| Energy discharged | 34,538 MWh |
+| Equivalent full cycles | 0.576 |
 
 Three expected quirks, say them before anyone asks:
 
@@ -81,35 +81,34 @@ Three expected quirks, say them before anyone asks:
   instead of assuming a dedicated wind farm whose output goes to the
   reserve first.
 
-## Act 4 — same event at realistic efficiency
+## Act 4 — same event at the historic 100%-efficient reading
 
-Dick et al. (J. Energy Storage, StEnSea) Table 1 gives 0.72 round-trip. The
-engine now splits that figure per leg (`sqrt(0.72) = 0.8485`), so the flag
-takes the published round-trip number directly: `--efficiency 0.72` realizes
-exactly 0.72 round trip, never a pre-squared value. The engine default is
-1.0 and the default is an open team decision; the flag lets the demo show
-both without waiting for the decision:
+Week 4B moved the engine default from 1.0 to 0.7225 (`0.85 * 0.85`, Report
+B's 0.85 read as a per-leg figure and squared to the round-trip figure this
+flag takes). Act 3 above already ran at that default. This act reruns the
+same event with `--efficiency 1.0` to show the Overview's original
+"100% efficient" reading for comparison, and to show that the flag still
+takes a round-trip figure directly, never a pre-squared value:
 
 ```bash
 uv run simulate --input examples/real_winter_stress_2026.csv \
-  --storage-mwh 60000 --power-mw 2000 --lead-days 1 --efficiency 0.72
+  --storage-mwh 60000 --power-mw 2000 --lead-days 1 --efficiency 1.0
 ```
 
 Expect the same run shape with:
 
-| Line | 1.0 | 0.72 |
+| Line | 0.7225 (default) | 1.0 |
 |---|---|---|
-| Severity reduction | 1.1% | 1.0% |
-| Energy discharged | 40,633 MWh | 34,478 MWh |
-| Equivalent full cycles | 0.677 | 0.575 |
+| Severity reduction | 1.0% | 1.1% |
+| Energy discharged | 34,538 MWh | 40,633 MWh |
+| Equivalent full cycles | 0.576 | 0.677 |
 | Final SoC (floor 18,000 MWh) | 19,367 MWh | 19,367 MWh |
 
-Talking point: 0.72 is the round-trip figure Dick et al. publish; the engine
-applies `sqrt(0.72) = 0.8485` per leg internally, so the number typed at the
-flag is the number realized end to end. Every published energy number still
-moves with this one decision. That is why the engine refuses a silent
-default and labels the value `[OPEN: round_trip_efficiency]` in its own
-output.
+Talking point: every published energy number moves with this one decision.
+`--efficiency 0.72` still realizes the Dick et al. (J. Energy Storage,
+StEnSea) Table 1 round-trip figure exactly, via `sqrt(0.72) = 0.8485` per
+leg internally. That is why the engine refuses to hide the choice and labels
+the value `[OPEN: round_trip_efficiency]` in its own output.
 
 ## Act 5 — how the answer scales with storage size
 
@@ -119,7 +118,7 @@ uv run sweep --input examples/real_winter_stress_2026.csv \
 ```
 
 Expect a 7-row table from 5,000 to 100,000 MWh. Reference row at
-60,000 MWh: severity 1.06%, discharged 40,730 MWh, EFC 0.679 (the sweep runs
+60,000 MWh: severity 0.90%, discharged 34,620 MWh, EFC 0.577 (the sweep runs
 every size over the full 11-day window with no lead days, which is why its
 60,000 MWh figures sit close to but not identical with Act 3's full-charge,
 1-lead-day run). Open `sweep.png` for the slide-ready chart. Add

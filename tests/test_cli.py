@@ -255,7 +255,13 @@ def test_json_summary_matches_direct_simulate_call():
     # boundary or the two paths stop comparing the same days.
     with open(EXAMPLE, encoding="utf-8") as f:
         day_set = load_day_profiles(f, origin=EXAMPLE)
-    asset = StorageAsset(total_mwh=20000.0, power_mw=2000.0)
+    # efficiency=DEFAULT_CONFIG.default_efficiency: the CLI's --efficiency default
+    # tracks Config (Week 4B change 10, 0.7225), and StorageAsset's own default
+    # stays 1.0 on purpose (see models.py). Build at the same value the CLI run
+    # below uses, or the two paths stop comparing the same scenario.
+    asset = StorageAsset(
+        total_mwh=20000.0, power_mw=2000.0, efficiency=DEFAULT_CONFIG.default_efficiency
+    )
     result = simulate(asset, day_set.days, starting_soc=asset.total_mwh)
 
     report = _report([])

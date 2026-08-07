@@ -28,7 +28,11 @@ class StorageAsset:
         Round-trip efficiency at the terminals (default 1.0). The engine never
         applies this value directly: it charges once and discharges once per cycle,
         so each leg carries ``one_way_efficiency`` (``sqrt(efficiency)``), and the
-        two legs multiply back to this round-trip figure.
+        two legs multiply back to this round-trip figure. Stays 1.0 here on
+        purpose: Week 4B moved ``Config.default_efficiency`` to 0.7225, but that
+        change is scoped to ``config.py``. A caller that builds a
+        ``StorageAsset`` directly, instead of through the CLI's
+        ``default=cfg.default_efficiency``, still gets the identity value.
     soc_floor_frac, strategic_reserve_frac
         Fractions of total capacity that together define the minimum SoC the engine
         never discharges below (the "reserve"). Team decision 2026-07-17: 20% floor

@@ -48,12 +48,14 @@ class Config:
         round-trip figure. Enter a round-trip figure directly, never pre-squared:
         Dick et al. Table 1 (`docs/archive/reviews/FINDINGS_STENSEA_PAPER_2026-08-02.md`) gives 0.72
         full cycle for StEnSea, and ``--efficiency 0.72`` realizes exactly that.
-        Defaults to 1.0, which reconciles the Overview's "100% efficient" assumption
-        with the Architecture doc's efficiency term (FACT_CHECK inconsistency #2),
-        and is still an open team question: ``config.py`` ships 1.0 while Report B
-        computed everything at 0.85. The storage pivot makes efficiency the axis
-        candidate technologies differ on (StEnSea 0.80, LAES 0.50-0.70, thermal
-        ~0.35). Undecided.
+        Defaults to 0.7225 as of Week 4B: ``0.85 * 0.85 = 0.7225``, reading Report
+        B's 0.85 as a per-leg figure and squaring it to the round-trip figure this
+        field takes. The StEnSea 0.72 full-cycle citation above stays as the
+        alternative reading. This narrows, but does not close, the open team
+        question: the source Global Assumptions block still reads
+        ``Round-trip efficiency = @`` (OPEN team question round_trip_efficiency).
+        The storage pivot makes efficiency the axis candidate technologies differ
+        on (StEnSea 0.80, LAES 0.50-0.70, thermal ~0.35). Undecided.
 
     default_soc_floor_frac / default_strategic_reserve_frac
         Reserve definition (FACT_CHECK inconsistency #3). Team decision 2026-07-17:
@@ -180,7 +182,7 @@ class Config:
     priority_demand_weight: float = 0.7
     priority_wind_weight: float = 0.3
     energy_budget_fraction: float = 0.80
-    default_efficiency: float = 1.0
+    default_efficiency: float = 0.7225
     default_soc_floor_frac: float = 0.20
     default_strategic_reserve_frac: float = 0.10
     default_severity_percentile: float = 0.90

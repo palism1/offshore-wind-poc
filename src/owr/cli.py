@@ -53,10 +53,11 @@ _OPEN_QUESTIONS_STATIC = {
     "round_trip_efficiency": {
         "flags": ["--efficiency"],
         "note": (
-            "config.py ships 1.0; Report B computed everything at 0.85. At 1.0 the "
-            "engine understates required charging energy by 17.6%. The storage "
-            "pivot makes efficiency the axis candidate technologies differ on "
-            "(StEnSea 0.80, LAES 0.50-0.70, thermal ~0.35). Undecided."
+            "config.py ships 0.7225 (0.85 * 0.85, Report B's 0.85 read as a "
+            "per-leg figure and squared to a round-trip figure). The source "
+            "Global Assumptions block still reads 'Round-trip efficiency = @'. "
+            "The storage pivot makes efficiency the axis candidate technologies "
+            "differ on (StEnSea 0.80, LAES 0.50-0.70, thermal ~0.35). Undecided."
         ),
         "handoff_ref": "docs/HANDOFF.md open question 1",
     },
