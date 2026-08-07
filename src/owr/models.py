@@ -242,6 +242,21 @@ class WrapConvention(StrEnum):
         return 1 if self is WrapConvention.WRAP_TO_NEXT_DAY else 0
 
 
+class PercentileRounding(StrEnum):
+    """How Component 3 turns a day's percentile into the integer it compares against
+    90.0. OPEN team question (stress_percentile_rounding): the source sentence reads
+    "The comparison should be 90.0 and current day's percentile as an integer" and
+    names no rule. FLOOR is the truncation reading and never promotes a day into the
+    stress set; ROUND_HALF_EVEN is Python's built-in round().
+
+    StrEnum, not a plain Enum, for the same reason WrapConvention is one: Config
+    carries it and cli.py does json.dumps(asdict(cfg)).
+    """
+
+    FLOOR = "floor"
+    ROUND_HALF_EVEN = "round_half_even"
+
+
 class PowerRule(StrEnum):
     """How a sweep sets storage power at each energy size. OPEN team question
     (sweep_power_scaling): see docs/archive/plans/PLAN_SCENARIO_SWEEP.md section 3, decision D2.

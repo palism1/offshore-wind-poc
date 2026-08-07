@@ -18,7 +18,7 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass
 
-from owr.models import HOURS_PER_DAY, PowerRule, WrapConvention
+from owr.models import HOURS_PER_DAY, PercentileRounding, PowerRule, WrapConvention
 
 
 @dataclass(frozen=True)
@@ -139,6 +139,42 @@ class Config:
         energy variable and reproduces the recorded reference points. Fixed
         duration is the fleet-scaled reading. See docs/archive/plans/PLAN_SCENARIO_SWEEP.md
         decision D2. Read at parser-build time only, as above.
+
+    default_wind_generation_multiplier
+        Sourced, Architecture doc Component 1 User Inputs. Scales historical wind
+        before the engine sees it; defaults to 1.0, the identity scale.
+
+    stress_percentile_floor_percent
+        Sourced, Component 3: the stress-event comparison bound, 90.0 on a 0 to 100
+        scale. Not the same value as ``default_severity_percentile``, which is the
+        same bound expressed as a fraction, 0 to 1.
+
+    stress_percentile_rounding
+        OPEN team question (``stress_percentile_rounding``). See
+        ``owr.models.PercentileRounding``. Defaults to ``FLOOR``.
+
+    cmdr_p90_hourly_mwh
+        Sourced, Metric Thresholds v1.1 Winter Data Anchors: "Stressed hours p90
+        threshold 18,413 MWh/hr". This is an **hourly** MWh figure and is **not**
+        the daily threshold that ``default_severity_percentile`` drives; see
+        `docs/DATA_SOURCES.md:87-89`.
+
+    zone_cmdr_acceptable_percent / zone_cmdr_failure_percent
+        Sourced CMDR operating-range bounds: Acceptable >= 20%, Failure <= 0%.
+
+    zone_swe_acceptable_percent / zone_swe_failure_percent
+        Sourced SWE operating-range bounds: Acceptable >= 3.0%, Failure < 0.5%.
+
+    zone_fop_acceptable_percent / zone_fop_failure_percent
+        Sourced FOP operating-range bounds: Acceptable >= 5.0%, Failure < 2.0%.
+
+    zone_rcm_acceptable_abs_percent / zone_rcm_failure_abs_percent
+        Sourced RCM operating-range bounds, applied to ``abs(value)``: Acceptable
+        <= 5.0%, Failure > 10.0%.
+
+    robustness_analysis_years
+        Sourced, Metric Thresholds v1.1: "The maximum possible score is 5 - one
+        point per analysis year (2022-2026)."
     """
 
     priority_demand_weight: float = 0.7
@@ -160,6 +196,19 @@ class Config:
         5000.0, 10000.0, 20000.0, 40000.0, 60000.0, 80000.0, 100000.0,
     )
     default_sweep_power_rule: PowerRule = PowerRule.FIXED
+    default_wind_generation_multiplier: float = 1.0
+    stress_percentile_floor_percent: float = 90.0
+    stress_percentile_rounding: PercentileRounding = PercentileRounding.FLOOR
+    cmdr_p90_hourly_mwh: float = 18413.0
+    zone_cmdr_acceptable_percent: float = 20.0
+    zone_cmdr_failure_percent: float = 0.0
+    zone_swe_acceptable_percent: float = 3.0
+    zone_swe_failure_percent: float = 0.5
+    zone_fop_acceptable_percent: float = 5.0
+    zone_fop_failure_percent: float = 2.0
+    zone_rcm_acceptable_abs_percent: float = 5.0
+    zone_rcm_failure_abs_percent: float = 10.0
+    robustness_analysis_years: int = 5
 
     def __post_init__(self) -> None:
         if abs((self.priority_demand_weight + self.priority_wind_weight) - 1.0) > 1e-9:
@@ -199,6 +248,28 @@ class Config:
         ):
             if not prev < nxt:
                 raise ValueError("default_sweep_sizes_mwh must be strictly increasing")
+        if (
+            not math.isfinite(self.default_wind_generation_multiplier)
+            or self.default_wind_generation_multiplier < 0
+        ):
+            raise ValueError("default_wind_generation_multiplier must be finite and >= 0")
+        if not 0.0 <= self.stress_percentile_floor_percent <= 100.0:
+            raise ValueError("stress_percentile_floor_percent must be in [0, 100]")
+        if not math.isfinite(self.cmdr_p90_hourly_mwh) or self.cmdr_p90_hourly_mwh <= 0:
+            raise ValueError("cmdr_p90_hourly_mwh must be finite and > 0")
+        if self.zone_cmdr_failure_percent >= self.zone_cmdr_acceptable_percent:
+            raise ValueError("zone_cmdr_failure_percent must be < zone_cmdr_acceptable_percent")
+        if self.zone_swe_failure_percent >= self.zone_swe_acceptable_percent:
+            raise ValueError("zone_swe_failure_percent must be < zone_swe_acceptable_percent")
+        if self.zone_fop_failure_percent >= self.zone_fop_acceptable_percent:
+            raise ValueError("zone_fop_failure_percent must be < zone_fop_acceptable_percent")
+        if not 0.0 < self.zone_rcm_acceptable_abs_percent < self.zone_rcm_failure_abs_percent:
+            raise ValueError(
+                "zone_rcm_acceptable_abs_percent must be in "
+                "(0, zone_rcm_failure_abs_percent)"
+            )
+        if self.robustness_analysis_years < 1:
+            raise ValueError("robustness_analysis_years must be >= 1")
 
 
 DEFAULT_CONFIG = Config()

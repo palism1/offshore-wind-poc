@@ -11,7 +11,7 @@ import pytest
 
 from owr.api.schemas import ScenarioCreate
 from owr.config import Config
-from owr.models import PowerRule, WrapConvention
+from owr.models import PercentileRounding, PowerRule, WrapConvention
 
 
 def test_new_fields_have_documented_defaults():
@@ -184,3 +184,80 @@ def test_sweep_defaults_json_round_trip():
         5000.0, 10000.0, 20000.0, 40000.0, 60000.0, 80000.0, 100000.0,
     ]
     assert round_tripped["default_sweep_power_rule"] == "fixed"
+
+
+# --------------------------------------------------------------------------- #
+# Week 4B fields (config constants, no wiring): wind multiplier, stress
+# percentile bounds, CMDR hourly anchor, zone bands, robustness years.
+# --------------------------------------------------------------------------- #
+
+
+def test_week4b_fields_have_documented_defaults():
+    cfg = Config()
+    assert cfg.default_wind_generation_multiplier == 1.0
+    assert cfg.stress_percentile_floor_percent == 90.0
+    assert cfg.stress_percentile_rounding == PercentileRounding.FLOOR
+    assert cfg.cmdr_p90_hourly_mwh == 18413.0
+    assert cfg.zone_cmdr_acceptable_percent == 20.0
+    assert cfg.zone_cmdr_failure_percent == 0.0
+    assert cfg.zone_swe_acceptable_percent == 3.0
+    assert cfg.zone_swe_failure_percent == 0.5
+    assert cfg.zone_fop_acceptable_percent == 5.0
+    assert cfg.zone_fop_failure_percent == 2.0
+    assert cfg.zone_rcm_acceptable_abs_percent == 5.0
+    assert cfg.zone_rcm_failure_abs_percent == 10.0
+    assert cfg.robustness_analysis_years == 5
+
+
+def test_zone_bands_reject_inverted_thresholds():
+    with pytest.raises(ValueError):
+        Config(zone_cmdr_failure_percent=20.0, zone_cmdr_acceptable_percent=20.0)
+    with pytest.raises(ValueError):
+        Config(zone_swe_failure_percent=3.0, zone_swe_acceptable_percent=3.0)
+    with pytest.raises(ValueError):
+        Config(zone_fop_failure_percent=5.0, zone_fop_acceptable_percent=5.0)
+    with pytest.raises(ValueError):
+        Config(zone_rcm_acceptable_abs_percent=10.0, zone_rcm_failure_abs_percent=5.0)
+    with pytest.raises(ValueError):
+        Config(zone_rcm_acceptable_abs_percent=0.0, zone_rcm_failure_abs_percent=10.0)
+
+
+def test_wind_multiplier_rejects_negative():
+    with pytest.raises(ValueError):
+        Config(default_wind_generation_multiplier=-1.0)
+
+
+def test_wind_multiplier_rejects_non_finite():
+    with pytest.raises(ValueError):
+        Config(default_wind_generation_multiplier=float("inf"))
+    with pytest.raises(ValueError):
+        Config(default_wind_generation_multiplier=float("nan"))
+
+
+def test_percentile_floor_rejects_out_of_range():
+    with pytest.raises(ValueError):
+        Config(stress_percentile_floor_percent=-0.1)
+    with pytest.raises(ValueError):
+        Config(stress_percentile_floor_percent=100.1)
+
+
+def test_robustness_analysis_years_rejects_non_positive():
+    with pytest.raises(ValueError):
+        Config(robustness_analysis_years=0)
+
+
+def test_cmdr_p90_hourly_mwh_rejects_non_positive():
+    with pytest.raises(ValueError):
+        Config(cmdr_p90_hourly_mwh=0.0)
+    with pytest.raises(ValueError):
+        Config(cmdr_p90_hourly_mwh=-1.0)
+
+
+def test_week4b_config_json_round_trip():
+    """Extends the earlier round-trip tests: PercentileRounding stays
+    serializable and the new scalar fields round-trip unchanged."""
+    payload = json.dumps(asdict(Config()))
+    round_tripped = json.loads(payload)
+    assert round_tripped["stress_percentile_rounding"] == "floor"
+    assert round_tripped["default_wind_generation_multiplier"] == 1.0
+    assert round_tripped["cmdr_p90_hourly_mwh"] == 18413.0
