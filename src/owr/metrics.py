@@ -83,6 +83,8 @@ from __future__ import annotations
 import math
 from collections.abc import Sequence
 
+from owr.models import HourState
+
 
 def _require_positive(value: float, name: str) -> None:
     if value <= 0:
@@ -237,17 +239,28 @@ def recharge_opportunity_mw(
     hourly_wind_mw: Sequence[float],
     hourly_load_mw: Sequence[float],
     hourly_discharge_mw: Sequence[float],
+    hourly_state: Sequence[HourState],
 ) -> list[float]:
-    """Per-hour wind energy available to recharge storage but not yet claimed by
-    net load: ``max(0.0, wind - max(0.0, load - discharge))``.
+    """Per-hour wind energy available to recharge storage but not yet claimed,
+    now schedule-driven rather than a restated surplus formula:
 
-    This restates the rule ``simulator.simulate`` applies before it clamps
-    against SoC and power, at the lines that compute ``net`` and
-    ``surplus_wind``. The simulator discards that value, so this function
-    rebuilds it from ``DayProfile.hourly_wind_mw``, ``HourlyResult.gross_load``
-    and ``HourlyResult.discharge``. This is documented duplication in the style
-    of ``cli._severity_reduction``; the drift guard is
-    ``tests/test_metrics.py::test_recharge_opportunity_matches_simulator_at_scale_where_no_clamp_binds``.
+    | Hour state | Value |
+    |---|---|
+    | ``PRE_CHARGE``, ``ACTIVE_OFF_PEAK`` | ``wind[h]`` |
+    | ``ACTIVE_RAMP_UP``, ``ACTIVE_PEAK``, ``ACTIVE_RAMP_DOWN`` | dispatch-hour surplus (below) |
+    | ``NON_EVENT`` | ``0.0`` |
+
+    The dispatch-hour surplus is the old rule, restated:
+    ``max(0.0, wind - max(0.0, load - discharge))``.
+
+    D4: ``PRE_CHARGE`` and ``ACTIVE_OFF_PEAK`` hours route all their wind to
+    storage under the event-relative policy, so the opportunity equals the
+    wind itself on those hours. ``NON_EVENT`` hours route all wind to the grid
+    by design, so no recharge opportunity exists to miss on them. The dispatch
+    hours keep the old surplus-above-net-load formula: storage still competes
+    with load on those hours, and that is the one place in this module the
+    retired rule legitimately survives (Section 13.1's guard test pins this).
+
     Do **not** add a field to ``HourlyResult``/``DailyResult``/``SimulationResult``
     for this: ``api/pg_store.py::_load_result`` rebuilds ``SimulationResult`` from
     the database, so a new field would silently read back as its default without
@@ -264,15 +277,21 @@ def recharge_opportunity_mw(
     _require_same_length(
         hourly_wind_mw, hourly_discharge_mw, "hourly_wind_mw", "hourly_discharge_mw"
     )
+    _require_same_length(hourly_wind_mw, hourly_state, "hourly_wind_mw", "hourly_state")
     _require_non_negative_series(hourly_wind_mw, "hourly_wind_mw")
     _require_non_negative_series(hourly_load_mw, "hourly_load_mw")
     _require_non_negative_series(hourly_discharge_mw, "hourly_discharge_mw")
-    return [
-        max(0.0, wind - max(0.0, load - discharge))
-        for wind, load, discharge in zip(
-            hourly_wind_mw, hourly_load_mw, hourly_discharge_mw, strict=True
-        )
-    ]
+    result = []
+    for wind, load, discharge, state in zip(
+        hourly_wind_mw, hourly_load_mw, hourly_discharge_mw, hourly_state, strict=True
+    ):
+        if state.charges_from_wind:
+            result.append(wind)
+        elif state.is_dispatch_hour:
+            result.append(max(0.0, wind - max(0.0, load - discharge)))
+        else:
+            result.append(0.0)
+    return result
 
 
 def cycle_recharge_mismatch_mwh(
@@ -347,7 +366,9 @@ def recharge_capacity_mismatch_fraction(
     Charge band (``0 <= Available Charge <= 70% Total Capacity``). The
     alternative reading is the full ``total_mwh``; the two differ by a factor of
     about 1.43 at the shipped fractions. This function stays free of
-    ``StorageAsset``: ``metrics.py`` imports nothing from ``models``.
+    ``StorageAsset``: ``metrics.py`` imports no asset or result type from
+    ``models`` (``recharge_opportunity_mw`` imports ``HourState``, the lightest
+    possible carrier of the hour classification).
     """
     _require_positive(maximum_available_capacity_mwh, "maximum_available_capacity_mwh")
     return average_mismatch_mwh / maximum_available_capacity_mwh

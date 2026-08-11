@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import math
 import os
+from dataclasses import replace
 
 from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
@@ -28,9 +29,10 @@ from owr.api import schemas
 from owr.api.store import InMemoryRepository, Repository, RunRecord
 from owr.config import DEFAULT_CONFIG
 from owr.models import DayProfile, StorageAsset, StressWindow
+from owr.schedule import build_schedule
 from owr.simulator import simulate
 from owr.stress_finder import (
-    find_stress_windows_at_percentile,
+    find_stress_windows_for_config,
     with_demand_percentile,
     with_peak_hourly_load,
 )
@@ -223,17 +225,28 @@ def create_app(repo: Repository | None = None) -> FastAPI:
                 days = with_demand_percentile(days)
             asset = _asset(inp)
             # Phase 7 (change 3): integer-percentile comparison, not the MWh
-            # quantile. round(x * 100.0, 9) is D1's guard against the float
-            # trap (0.29 * 100.0 == 28.999999999999996).
-            run.stress_windows = with_peak_hourly_load(
-                find_stress_windows_at_percentile(
-                    days,
-                    inp.min_stress_window_days,
-                    percentile_floor_percent=round(inp.severity_percentile * 100.0, 9),
-                    rounding=DEFAULT_CONFIG.stress_percentile_rounding,
-                ),
-                days,
+            # quantile. find_stress_windows_for_config centralizes D1's float
+            # trap guard (round(x * 100.0, 9)).
+            #
+            # cfg overrides only the two fields detection used
+            # (default_severity_percentile, default_min_stress_window_days),
+            # via dataclasses.replace. The API detects with the scenario's
+            # percentile and window length but simulates with DEFAULT_CONFIG
+            # otherwise; without this override the schedule builder would
+            # filter qualifying windows against a different minimum than
+            # detection used. peak_weight/smooth_weight stay request
+            # parameters, not pushed into cfg: the schema permits both to be
+            # 0.0, which Config.__post_init__ rejects, and that would turn a
+            # currently valid request into a 422.
+            cfg = replace(
+                DEFAULT_CONFIG,
+                default_severity_percentile=inp.severity_percentile,
+                default_min_stress_window_days=inp.min_stress_window_days,
             )
+            run.stress_windows = with_peak_hourly_load(
+                find_stress_windows_for_config(days, cfg), days
+            )
+            schedule = build_schedule(days, stress_windows=run.stress_windows, config=cfg)
             starting_soc = (
                 body.starting_soc if body.starting_soc is not None else inp.storage_start_mwh
             )
@@ -241,8 +254,9 @@ def create_app(repo: Repository | None = None) -> FastAPI:
                 asset,
                 days,
                 starting_soc=starting_soc,
+                schedule=schedule,
                 available_capacity_mw=inp.available_capacity_mw,
-                config=DEFAULT_CONFIG,
+                config=cfg,
                 peak_weight=inp.peak_weight,
                 smooth_weight=inp.smooth_weight,
             )

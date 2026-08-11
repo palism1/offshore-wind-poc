@@ -59,9 +59,18 @@ def daily_budget(
     cycle. See ``simulator.simulate`` for the basis this engine applies and OPEN
     team question ``recharge_cycle_basis``.
 
-    Takes no ``Config``: the 80 percent energy budget rule no longer enters the
-    daily budget. ``config.energy_budget_fraction`` still drives the next-day
-    need inside ``simulator.simulate``, so the field stays.
+    ``expected_recharge_mwh`` is a recharge **opportunity** over the remaining
+    horizon, not the charge a tank could accept. The caller must not clamp it
+    by headroom. ``available_charge_mwh`` is the only term that carries the
+    state of charge. A headroom-clamped recharge term makes this function
+    return less as the reserve holds more, and a full reserve then returns
+    0.0 for every remaining day. See
+    ``docs/architecture/PLAN_BUDGET_FULL_TANK_FIX.md``.
+
+    Takes no ``Config``: the 80 percent energy budget rule is deleted from the
+    engine. ``available_charge_mwh`` comes from ``soc_engine.usable_energy``,
+    which already subtracts the protected reserve floor. That floor is the only
+    limit on how much energy a day may use.
     """
     if remaining_stress_days < 1:
         raise ValueError("remaining_stress_days must be >= 1")
@@ -81,7 +90,13 @@ def recharge_sufficiency_ratio(
 ) -> float | None:
     """Ratio of energy the asset can recharge vs. what the next day is expected to
     need. >= 1.0 means the reserve is self-sustaining across the window; < 1.0 warns
-    the reserve is drawing down. Returns None when nothing is needed."""
+    the reserve is drawing down. Returns None when nothing is needed.
+
+    ``simulator.simulate`` passes the next day's full usable energy as
+    ``discharge_needed_mwh``. Before the ``energy_budget_fraction`` removal it
+    passed 80 percent of that figure, so a day now needs 1.25 times the old
+    recharge to report 1.0.
+    """
     if discharge_needed_mwh <= 0:
         return None
     return recharge_available_mwh / discharge_needed_mwh

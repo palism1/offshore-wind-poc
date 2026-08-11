@@ -1,17 +1,30 @@
 """Rolling-window (MPC-style) simulation loop (Architecture Step 5 / simulator).
 
-Orchestrates the per-day cycle over a stress window:
+Orchestrates the per-day cycle over a span of days, event-relative:
 
-    for each day d in the window:
-        priority(d), report-only (D13) -> budget(d), the two-term minimum
-        allocate budget  -> hourly discharge  (dispatch module)
-        apply discharge, then off-peak recharge from wind  (soc_engine)
-        record hourly + daily results, capacity margin      (metrics)
+    for each day d in the span:
+        schedule.for_date(d) says the day's mode and hour states
+        priority(d), report-only (D13) -> budget(d) on ACTIVE_EVENT days only
+        allocate budget over the day's dispatch window -> hourly discharge (dispatch)
+        apply discharge, then event-relative charge from wind (soc_engine)
+        record hourly + daily results, capacity margin (metrics)
+
+Charge and discharge are mutually exclusive by construction: ``recharge.
+charge_request_mw`` returns 0.0 on every dispatch hour, and ``dispatch.
+allocate_discharge`` returns 0.0 on every hour outside the day's dispatch
+window. Which hour does what is decided once, by ``schedule.build_schedule``,
+and this module only reads that decision — it never re-derives it (D1, D2).
 
 Week 4B change 7 replaced ``budget.daily_budget``'s "80% cap times priority
 share" rule with Component 5's two-term minimum. ``priority(d)`` is still
 computed for the report; it no longer feeds the budget (D13, OPEN team
 question ``priority_weighting_retired``).
+
+The budget's recharge term now comes from ``recharge.recharge_opportunity_mwh``,
+not from ``recharge.charge_forward``: the per-hour clamp and state update that
+``charge_forward`` used to roll forward drop out of the per-day loop, so the
+loop shape stays O(n^2 * 24) but does less work per iteration. See
+``docs/architecture/PLAN_BUDGET_FULL_TANK_FIX.md``.
 
 Model predictive control in spirit: each day is planned with that day's forecast and
 executed one step at a time; state (SoC) carries forward. No I/O — inputs are plain
@@ -26,8 +39,17 @@ import pandas as pd
 
 from owr import budget as budget_mod
 from owr import dispatch as dispatch_mod
+from owr import recharge as recharge_mod
 from owr.config import DEFAULT_CONFIG, Config
-from owr.models import HOURS_PER_DAY, DailyResult, DayProfile, HourlyResult, StorageAsset
+from owr.models import (
+    HOURS_PER_DAY,
+    DailyResult,
+    DayMode,
+    DayProfile,
+    HourlyResult,
+    OperatingSchedule,
+    StorageAsset,
+)
 from owr.soc_engine import clamp_charge, clamp_discharge, next_soc, usable_energy
 
 HOURLY_FRAME_COLUMNS: tuple[str, ...] = (
@@ -83,10 +105,11 @@ class SimulationResult:
         ``observed_net_load``, ``oil_generation_actual``, ``gas_generation_actual``,
         ``wind_generation_actual``.
 
-        D2: ``net_load`` equals ``gross_load - discharge``. ``charge`` carries
-        surplus-wind charging and never enters ``net_load``, because surplus wind
-        is wind above the load the grid must serve, and the grid never supplies it.
-        So ``capacity_dispatched(t)`` equals ``discharge(t)`` and equals
+        D2: ``net_load`` equals ``gross_load - discharge``. ``charge`` now carries
+        event-relative charging (``recharge.charge_request_mw``, gated by the
+        hour's ``HourState``) and still never enters ``net_load``, because that
+        wind is never supplied to the grid to net back out. So
+        ``capacity_dispatched(t)`` equals ``discharge(t)`` and equals
         ``gross_load - net_load`` for any later per-event metric (CMDR, SWE, FOP).
         """
         rows = [{"date": day.date, **vars(hr)} for day in self.daily for hr in day.hourly]
@@ -118,36 +141,29 @@ class SimulationResult:
         )
 
 
-def _surplus_wind_recharge_mwh(days: list[DayProfile]) -> float:
-    """Forecast recharge (MWh): surplus wind summed across every hour of ``days``.
-
-    ``max(0.0, wind[h] - max(0.0, load[h]))``, exactly the rule
-    ``initial_soc.charge_from_wind`` applies, so the pre-event forecast and this
-    mid-window forecast cannot drift apart. Applies no SoC or power clamp: this
-    is a forecast of opportunity for ``budget.daily_budget``'s recharge term,
-    not a dispatch.
-    """
-    total = 0.0
-    for day in days:
-        load = day.hourly_load_mw
-        wind = day.hourly_wind_mw if day.hourly_wind_mw else [0.0] * HOURS_PER_DAY
-        for h in range(HOURS_PER_DAY):
-            total += max(0.0, wind[h] - max(0.0, load[h]))
-    return total
-
-
 def simulate(
     asset: StorageAsset,
     window_days: list[DayProfile],
     starting_soc: float,
+    *,
+    schedule: OperatingSchedule,
     available_capacity_mw: float | None = None,
     config: Config = DEFAULT_CONFIG,
     peak_weight: float = 0.5,
     smooth_weight: float = 0.5,
 ) -> SimulationResult:
-    """Run the reserve through a stress window and return per-day + summary results."""
+    """Run the reserve over ``window_days`` and return per-day + summary results.
+
+    ``schedule`` is required, with no default and no internal detection
+    fallback: a caller must build it once (``schedule.build_schedule`` or
+    ``schedule.detect_and_build_schedule``) and pass the same object to every
+    consumer, so the reported windows and the simulated windows are always the
+    same objects (D2).
+    """
     if starting_soc < 0 or starting_soc > asset.total_mwh:
         raise ValueError("starting_soc must be within [0, total_mwh]")
+
+    day_schedules = schedule.slice_for([d.date for d in window_days])
 
     soc = starting_soc
     daily: list[DailyResult] = []
@@ -163,24 +179,40 @@ def simulate(
     ]
 
     for i, day in enumerate(window_days):
+        day_schedule = day_schedules[i]
         # D14: the recharge-cycle basis this engine applies is the remaining
-        # days of the current window, both for N_remaining_cycles and for the
+        # days of the current span, both for N_remaining_cycles and for the
         # count remaining_stress_days divides by. See OPEN team question
-        # recharge_cycle_basis for the event-level alternative.
+        # recharge_cycle_basis for the event-level alternative. D15: on a
+        # multi-event span this divisor mixes gap and unrelated-event days
+        # with the numerator below, which is now schedule-aware. The
+        # numerator is the horizon recharge opportunity
+        # (recharge.recharge_opportunity_mwh): it carries no state of
+        # charge, so D15's day-set mismatch is a mismatch of which days are
+        # counted, never a mismatch of what the tank could accept.
         remaining_days = window_days[i:]
         remaining_cycles = len(remaining_days)
-        day_budget = budget_mod.daily_budget(
-            available_charge_mwh=usable_energy(soc, asset),
-            remaining_stress_days=remaining_cycles,
-            expected_recharge_mwh=_surplus_wind_recharge_mwh(remaining_days),
-            remaining_cycles=remaining_cycles,
-        )
+        if day_schedule.mode is DayMode.ACTIVE_EVENT:
+            day_budget = budget_mod.daily_budget(
+                available_charge_mwh=usable_energy(soc, asset),
+                remaining_stress_days=remaining_cycles,
+                expected_recharge_mwh=recharge_mod.recharge_opportunity_mwh(
+                    remaining_days, day_schedules[i:]
+                ),
+                remaining_cycles=remaining_cycles,
+            )
+        else:
+            day_budget = 0.0
 
         load = list(day.hourly_load_mw)
         wind = list(day.hourly_wind_mw) if day.hourly_wind_mw else [0.0] * HOURS_PER_DAY
         hourly_discharge, hourly_discharge_peak, hourly_discharge_smooth = (
             dispatch_mod.allocate_discharge(
-                load, day_budget, asset.power_mw, peak_weight, smooth_weight
+                dispatch_window=day_schedule.dispatch_window,
+                budget_mwh=day_budget,
+                power_mw=asset.power_mw,
+                peak_weight=peak_weight,
+                smooth_weight=smooth_weight,
             )
         )
 
@@ -197,21 +229,21 @@ def simulate(
                 soc, charge=0.0, discharge=discharge, one_way_efficiency=asset.one_way_efficiency
             )
 
-            # Off-peak recharge: any wind above this hour's (already reduced) net load
-            # tops the reserve back up, capped by headroom and power.
-            net = load[h] - discharge
-            surplus_wind = max(0.0, wind[h] - max(0.0, net))
-            charge = clamp_charge(soc, surplus_wind, asset)
+            # Event-relative charge: request comes from the hour's classification,
+            # never from load or discharge. Mutually exclusive with discharge by
+            # construction (charges_from_wind is False on every dispatch hour).
+            request = recharge_mod.charge_request_mw(wind[h], day_schedule.hours[h])
+            charge = clamp_charge(soc, request, asset)
             soc = next_soc(
                 soc, charge=charge, discharge=0.0, one_way_efficiency=asset.one_way_efficiency
             )
 
-            # D2: net_load_mw = gross_load - discharge. Surplus-wind charging never
-            # enters net_load. The baseline peak (below) never counts the charging
+            # D2: net_load_mw = gross_load - discharge. Charging never enters
+            # net_load. The baseline peak (below) never counts the charging
             # draw either, so the metric compares two worlds that differ by storage
-            # alone; the grid never supplies surplus wind, so charging from it adds
-            # no grid load to net out.
-            net_load_mw = net
+            # alone; the grid never supplies the charged wind, so charging from it
+            # adds no grid load to net out.
+            net_load_mw = load[h] - discharge
             margin = (
                 available_capacity_mw - net_load_mw
                 if available_capacity_mw is not None
@@ -233,19 +265,18 @@ def simulate(
                 )
             )
 
-        # How much the next day is expected to need vs. what we can recharge.
-        next_need = (
-            config.energy_budget_fraction * usable_energy(soc, asset)
-            if i + 1 < len(window_days)
-            else 0.0
-        )
+        # The next day may need every MWh above the protected reserve floor.
+        # usable_energy already subtracts that floor, and no further fraction
+        # applies. Zero on the last day, which makes the ratio None.
+        usable_at_close = usable_energy(soc, asset)
+        next_need = usable_at_close if i + 1 < len(window_days) else 0.0
         recharge_available = sum(h.charge for h in hourly)
         daily.append(
             DailyResult(
                 date=day.date,
                 budget=day_budget,
                 priority=priorities[i],
-                usable_energy=usable_energy(soc, asset),
+                usable_energy=usable_at_close,
                 recharge_sufficiency_ratio=budget_mod.recharge_sufficiency_ratio(
                     recharge_available, next_need
                 ),

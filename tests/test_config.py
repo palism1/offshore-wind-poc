@@ -22,6 +22,10 @@ def test_new_fields_have_documented_defaults():
     assert cfg.default_smooth_weight == 0.5
 
 
+def test_config_has_no_energy_budget_fraction():
+    assert "energy_budget_fraction" not in asdict(Config())
+
+
 def test_default_severity_percentile_must_be_in_range():
     with pytest.raises(ValueError):
         Config(default_severity_percentile=-0.1)
@@ -106,7 +110,7 @@ def test_default_severity_percentile_is_0_90():
 def test_peak_window_defaults():
     cfg = Config()
     assert cfg.default_peak_window_hours == 3
-    assert cfg.default_peak_window_wrap == WrapConvention.WRAP_TO_NEXT_DAY
+    assert cfg.default_peak_window_wrap == WrapConvention.STOP_AT_MIDNIGHT
 
 
 @pytest.mark.parametrize("hours", [0, 25])
@@ -120,7 +124,28 @@ def test_config_json_serializes_wrap_convention():
     would raise TypeError if WrapConvention were a plain Enum instead of StrEnum."""
     payload = json.dumps(asdict(Config()))
     round_tripped = json.loads(payload)
-    assert round_tripped["default_peak_window_wrap"] == "wrap_to_next_day"
+    assert round_tripped["default_peak_window_wrap"] == "stop_at_midnight"
+
+
+# --------------------------------------------------------------------------- #
+# Ramp hours (event-relative recharge)
+# --------------------------------------------------------------------------- #
+
+
+def test_default_ramp_hours_default():
+    cfg = Config()
+    assert cfg.default_ramp_hours == 1
+
+
+@pytest.mark.parametrize("hours", [-1, 25])
+def test_default_ramp_hours_must_be_in_range(hours):
+    with pytest.raises(ValueError):
+        Config(default_ramp_hours=hours)
+
+
+@pytest.mark.parametrize("hours", [0, 24])
+def test_default_ramp_hours_boundary_values_accepted(hours):
+    Config(default_ramp_hours=hours)
 
 
 # --------------------------------------------------------------------------- #

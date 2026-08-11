@@ -15,8 +15,13 @@ from owr.config import DEFAULT_CONFIG
 from owr.initial_soc import charge_from_wind
 from owr.models import StorageAsset
 from owr.scenario_input import load_day_profiles, read_day_profiles
+from owr.schedule import build_schedule
 from owr.simulator import simulate
-from owr.stress_finder import find_stress_windows
+from owr.stress_finder import (
+    find_stress_windows,
+    find_stress_windows_for_config,
+    with_peak_hourly_load,
+)
 from owr.version import code_version
 
 EXAMPLE = "examples/synthetic_winter_stress.csv"
@@ -42,7 +47,6 @@ def test_build_parser_defaults_match_default_config():
     assert args.min_stress_window_days == cfg.default_min_stress_window_days
     assert args.peak_weight == cfg.default_peak_weight
     assert args.smooth_weight == cfg.default_smooth_weight
-    assert args.energy_budget_fraction == cfg.energy_budget_fraction
     assert args.priority_demand_weight == cfg.priority_demand_weight
     assert args.priority_wind_weight == cfg.priority_wind_weight
 
@@ -56,6 +60,14 @@ def test_help_exits_zero():
     with pytest.raises(SystemExit) as exc:
         cli.build_parser().parse_args(["--help"])
     assert exc.value.code == 0
+
+
+def test_energy_budget_fraction_flag_is_gone():
+    with pytest.raises(SystemExit) as exc:
+        cli.build_parser().parse_args(
+            ["--input", EXAMPLE, "--energy-budget-fraction", "0.5"]
+        )
+    assert exc.value.code == 2
 
 
 def test_missing_input_exits_two():
@@ -207,9 +219,10 @@ def test_daily_table_columns_align_across_magnitudes():
 
     for row in row_lines:
         cells = list(re.finditer(r"\S+", row))
-        assert len(cells) == len(numeric_headers) + 1, row
+        # date + mode (both left-aligned, not in numeric_headers) + the numeric cells.
+        assert len(cells) == len(numeric_headers) + 2, row
         assert cells[0].start() == 2, row
-        assert [c.end() for c in cells[1:]] == header_edges, row
+        assert [c.end() for c in cells[2:]] == header_edges, row
 
 
 def test_json_output_is_clean_stdout_with_all_top_level_keys(capsys):
@@ -262,7 +275,12 @@ def test_json_summary_matches_direct_simulate_call():
     asset = StorageAsset(
         total_mwh=20000.0, power_mw=2000.0, efficiency=DEFAULT_CONFIG.default_efficiency
     )
-    result = simulate(asset, day_set.days, starting_soc=asset.total_mwh)
+    cfg = DEFAULT_CONFIG
+    windows = with_peak_hourly_load(
+        find_stress_windows_for_config(day_set.days, cfg), day_set.days
+    )
+    schedule = build_schedule(day_set.days, stress_windows=windows, config=cfg)
+    result = simulate(asset, day_set.days, starting_soc=asset.total_mwh, schedule=schedule)
 
     report = _report([])
     summary = report["summary"]
@@ -319,24 +337,40 @@ def test_no_hourly_soc_below_min_soc():
 
 
 def test_reserve_peak_below_baseline_and_positive_severity_reduction():
-    # --wind-multiplier 25: Week 4B change 7's revised daily_budget takes
-    # surplus wind above load as its recharge term, and this file's wind never
-    # clears its load at the identity multiplier (R7; see the companion test
-    # right below). 25 restores surplus so this run still demonstrates real
-    # discharge.
-    report = _report(["--wind-multiplier", "25"])
+    # This fixture's --start-soc-mwh and --power-mw/--storage-mwh ratio
+    # predate PLAN_BUDGET_FULL_TANK_FIX.md, kept unchanged: they remain a
+    # valid demonstration of the two-term minimum binding on both terms in
+    # turn, not a workaround for a defect. --power-mw 200 against
+    # --storage-mwh 200000 leaves real headroom across all 3 pre-charge days,
+    # so available_charge_mwh rises with the non-full start and the
+    # recharge opportunity term (recharge.recharge_opportunity_mwh, which
+    # carries no SoC since the fix) still has real headroom to be delivered
+    # against.
+    report = _report(
+        ["--storage-mwh", "200000", "--power-mw", "200", "--start-soc-mwh", "100000"]
+    )
     summary = report["summary"]
     assert summary["reserve_peak_mw"] < summary["baseline_peak_mw"]
     assert summary["severity_reduction"] > 0
 
 
-def test_reserve_peak_equals_baseline_without_surplus_wind():
-    # R7 companion: at the identity wind multiplier this file's wind never
-    # clears its load, so expected_recharge_mwh is 0.0 and the budget is 0.0
-    # every day. This is the revised rule working correctly, not a defect.
+def test_positive_severity_reduction_at_the_default_full_start():
+    # PLAN_EVENT_RELATIVE_RECHARGE.md predicted this inversion (its own
+    # Section "Existing tests that must change") and PLAN_BUDGET_FULL_TANK_FIX.md
+    # delivers it. The recharge plan's Phase 6 fed budget.daily_budget's
+    # recharge term from recharge.charge_forward's SoC-clamped forecast, so a
+    # fully-charged default start (the CLI's --start-soc-mwh default is the
+    # asset's total_mwh) forecast zero further recharge from hour 0 and
+    # floored the whole span's budget at 0.0, whatever the wind carried. The
+    # fix moves that term to recharge.recharge_opportunity_mwh, which takes
+    # no starting SoC and no StorageAsset, so a full reserve now still
+    # reports a real recharge opportunity and the budget is non-zero.
+    # Measured value: 0.0551.
     report = _report([])
     summary = report["summary"]
-    assert summary["severity_reduction"] == pytest.approx(0.0)
+    assert summary["severity_reduction"] > 0
+    assert summary["energy_discharged_mwh"] > 0
+    assert summary["severity_reduction"] == pytest.approx(0.0551, abs=1e-3)
 
 
 def test_no_hourly_soc_below_min_soc_at_lossy_efficiency():
@@ -370,8 +404,26 @@ def test_lead_days_correctness_by_equality_against_charge_from_wind():
     expected_lead = [d for d in days if start - timedelta(days=3) <= d.date < start]
     assert [d.date for d in expected_lead] == [start - timedelta(days=k) for k in (3, 2, 1)]
 
-    asset = StorageAsset(total_mwh=200000.0, power_mw=2000.0)
-    expected_soc = charge_from_wind(20000.0, expected_lead, asset)
+    # efficiency=DEFAULT_CONFIG.default_efficiency: --efficiency defaults to
+    # cfg.default_efficiency (0.7225), not StorageAsset's own default of 1.0.
+    # The old surplus rule made this mismatch invisible on this fixture (wind
+    # never exceeded load, so charge was 0.0 regardless of efficiency); the
+    # new PRE_CHARGE rule charges substantially here, so it now matters.
+    asset = StorageAsset(
+        total_mwh=200000.0, power_mw=2000.0, efficiency=DEFAULT_CONFIG.default_efficiency
+    )
+    # The CLI builds one schedule over ALL file days and passes it to
+    # charge_from_wind, so lead days and span days share one classification
+    # (D2). The schedule's detection needs demand_percentile stamped, which
+    # only load_day_profiles does (Phase 6); OperatingSchedule keys on date
+    # only, so it is safe to slice with expected_lead (from read_day_profiles).
+    with open(EXAMPLE, encoding="utf-8") as f:
+        stamped_days = load_day_profiles(f, origin=EXAMPLE).days
+    windows = with_peak_hourly_load(
+        find_stress_windows_for_config(stamped_days, cfg), stamped_days
+    )
+    schedule = build_schedule(stamped_days, stress_windows=windows, config=cfg)
+    expected_soc = charge_from_wind(20000.0, expected_lead, asset, schedule=schedule)
     assert report["simulated"]["soc_at_window_start_mwh"] == pytest.approx(expected_soc)
     assert report["simulated"]["soc_at_window_start_mwh"] < asset.total_mwh
 
@@ -472,8 +524,21 @@ def test_window_all_lead_days_positive_path():
     expected_dates = [days[0].date.isoformat(), days[1].date.isoformat()]
     assert [d.date.isoformat() for d in expected_lead] == expected_dates
 
-    asset = StorageAsset(total_mwh=200000.0, power_mw=2000.0)
-    expected_soc = charge_from_wind(20000.0, expected_lead, asset)
+    # efficiency=DEFAULT_CONFIG.default_efficiency: see the comment in
+    # test_lead_days_correctness_by_equality_against_charge_from_wind.
+    asset = StorageAsset(
+        total_mwh=200000.0, power_mw=2000.0, efficiency=DEFAULT_CONFIG.default_efficiency
+    )
+    cfg = DEFAULT_CONFIG
+    # See the comment in test_lead_days_correctness_by_equality_against_charge_from_wind:
+    # detection needs demand_percentile, which only load_day_profiles stamps.
+    with open(EXAMPLE, encoding="utf-8") as f:
+        stamped_days = load_day_profiles(f, origin=EXAMPLE).days
+    windows = with_peak_hourly_load(
+        find_stress_windows_for_config(stamped_days, cfg), stamped_days
+    )
+    schedule = build_schedule(stamped_days, stress_windows=windows, config=cfg)
+    expected_soc = charge_from_wind(20000.0, expected_lead, asset, schedule=schedule)
     assert report["simulated"]["soc_at_window_start_mwh"] == pytest.approx(expected_soc)
     assert report["simulated"]["soc_at_window_start_mwh"] < asset.total_mwh
 

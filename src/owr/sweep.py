@@ -28,6 +28,7 @@ from owr.config import DEFAULT_CONFIG, Config
 from owr.metrics import equivalent_full_cycles as _equivalent_full_cycles
 from owr.metrics import severity_reduction as _severity_reduction
 from owr.models import DayProfile, PowerRule, StorageAsset
+from owr.schedule import detect_and_build_schedule
 from owr.simulator import simulate
 
 SWEEP_FRAME_COLUMNS: tuple[str, ...] = (
@@ -178,8 +179,8 @@ def run_sweep(
     and ``config.default_smooth_weight``; it takes no separate weight parameters.
     ``cli._run`` builds its ``Config`` from the same two flags, so a sweep and a
     single run reach ``simulate`` with identical arguments **while
-    ``energy_budget_fraction``, ``priority_demand_weight`` and
-    ``priority_wind_weight`` keep their ``Config`` defaults**, the only state the
+    ``priority_demand_weight`` and ``priority_wind_weight`` keep their
+    ``Config`` defaults**, the only state the
     ``sweep`` CLI can produce (plan section 4.3 rule 4).
 
     Raises ``ValueError`` on an empty ``span_days``.
@@ -188,6 +189,10 @@ def run_sweep(
         raise ValueError("span_days must not be empty")
 
     days = list(span_days)
+    # Built once, before the size loop: the schedule depends on load, wind and
+    # config only, never on storage size, so one build serves every point and
+    # every point sees the same classification.
+    schedule = detect_and_build_schedule(days, config=config)
     points: list[SweepPoint] = []
     for size in spec.sizes_mwh:
         asset = spec.asset_for(size)
@@ -195,6 +200,7 @@ def run_sweep(
             asset,
             days,
             starting_soc=asset.total_mwh,
+            schedule=schedule,
             config=config,
             peak_weight=config.default_peak_weight,
             smooth_weight=config.default_smooth_weight,

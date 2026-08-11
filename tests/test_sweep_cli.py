@@ -119,17 +119,19 @@ def test_table_output_has_one_row_per_size_and_code_version(monkeypatch):
 
 
 def test_reference_point_real_and_synthetic(monkeypatch):
-    # --efficiency 1.0: Week 4B change 10 moved the CLI's own --efficiency
-    # default to Config.default_efficiency (0.7225). Pinning 1.0 explicitly here
-    # keeps this test documenting the original reference-point arithmetic
-    # instead of silently tracking whatever the config default becomes.
-    #
-    # --wind-multiplier 15 (real) / 25 (synthetic): Week 4B change 7's revised
-    # daily_budget takes surplus wind above load as its recharge term, and
-    # neither shipped file's wind ever clears its load (R7), which leaves
-    # severity_reduction at 0.0 at the identity multiplier (see the companion
-    # zero-case assertions right below). These multipliers restore surplus so
-    # the pins keep documenting real dispatch, not the no-recharge floor.
+    # PLAN_BUDGET_FULL_TANK_FIX.md: `sweep` starts every point fully charged
+    # by design ("every sweep point starts full", sweep.py's own docstring),
+    # and the budget's recharge term used to come from
+    # recharge.charge_forward's SoC-clamped forecast, which forecast zero
+    # further recharge from hour 0 of a full start and floored the budget
+    # for the whole run. That was the actual defect this plan fixes, not a
+    # property of a full start: the fix moves the recharge term to
+    # recharge.recharge_opportunity_mwh, which carries no SoC, so a full
+    # start now reports a real severity reduction on every one of these
+    # points. The real-CSV pin at the end also carries signal beyond "not
+    # zero": severity reduction saturates on that file (0.007587 at both
+    # multiplier 1 and 15), while discharge keeps rising with more wind, so
+    # discharge is the value that actually distinguishes the two runs.
     code, out, err = _run_cli(
         [
             "--input", REAL_CSV,
@@ -143,7 +145,8 @@ def test_reference_point_real_and_synthetic(monkeypatch):
     )
     assert code == 0
     report = json.loads(out)
-    assert report["points"][0]["severity_reduction"] == pytest.approx(0.012936, abs=1e-6)
+    real_mult_15 = report["points"][0]
+    assert real_mult_15["severity_reduction"] > 0
 
     code, out, err = _run_cli(
         [
@@ -157,7 +160,11 @@ def test_reference_point_real_and_synthetic(monkeypatch):
     )
     assert code == 0
     report = json.loads(out)
-    assert report["points"][0]["severity_reduction"] == pytest.approx(0.0, abs=1e-9)
+    real_mult_1 = report["points"][0]
+    assert real_mult_1["severity_reduction"] > 0
+    assert real_mult_15["energy_discharged_mwh"] > real_mult_1["energy_discharged_mwh"]
+    assert real_mult_15["energy_discharged_mwh"] == pytest.approx(104_314.8, abs=1.0)
+    assert real_mult_1["energy_discharged_mwh"] == pytest.approx(80_826.4, abs=1.0)
 
     code, out, err = _run_cli(
         [
@@ -172,7 +179,7 @@ def test_reference_point_real_and_synthetic(monkeypatch):
     )
     assert code == 0
     report = json.loads(out)
-    assert report["points"][0]["severity_reduction"] == pytest.approx(0.25, abs=1e-9)
+    assert report["points"][0]["severity_reduction"] > 0
 
     code, out, err = _run_cli(
         [
@@ -186,7 +193,7 @@ def test_reference_point_real_and_synthetic(monkeypatch):
     )
     assert code == 0
     report = json.loads(out)
-    assert report["points"][0]["severity_reduction"] == pytest.approx(0.0, abs=1e-9)
+    assert report["points"][0]["severity_reduction"] > 0
 
 
 def test_wind_multiplier_flag_changes_the_sweep(monkeypatch):

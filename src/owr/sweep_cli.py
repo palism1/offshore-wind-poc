@@ -158,9 +158,10 @@ def build_parser() -> argparse.ArgumentParser:
         help=(
             f"scale historical wind by this factor before the engine sees it "
             f"(default {cfg.default_wind_generation_multiplier}, sourced: Architecture "
-            "2026-08-05 Component 1) [OPEN: wind_multiplier_range]. At 1.0 the shipped "
-            "profiles still charge 0.0 MWh: ISO-NE system-wide wind almost never "
-            "exceeds system load. A multiplier near 5 is what makes surplus wind appear."
+            "2026-08-05 Component 1) [OPEN: wind_multiplier_range]. Event-relative "
+            "recharge routes all pre-charge and off-peak wind to storage, so charging "
+            "is non-zero at the identity multiplier; the multiplier scales an existing "
+            "quantity rather than creating one."
         ),
     )
     parser.add_argument(
