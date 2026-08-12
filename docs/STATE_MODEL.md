@@ -6,17 +6,55 @@ This document inventories every object representing simulator state in `src/owr/
 
 ## State Inventory
 
+### Immutable execution plan — built once, read by every consumer
+
+**`OperatingSchedule`** (frozen, `models.py`) — Phase 6 addition
+
+A pre-computed immutable schedule that spans the entire simulation horizon. Built once by `schedule.build_schedule()` and read (never modified) by every consumer: `simulator`, `dispatch`, `recharge`, `metrics`.
+
+| Field | Type | Role |
+|---|---|---|
+| `days` | `dict[date, DaySchedule]` | One day's classification per date |
+
+**`DaySchedule`** (frozen dataclass, `models.py`) — Phase 6 addition
+
+One day's operating classification and derived properties (cached).
+
+| Field | Type | Role | Mutated |
+|---|---|---|---|
+| `date` | `date` | Calendar date | Never |
+| `mode` | `DayMode` | NON_EVENT, PRE_CHARGE, or ACTIVE_EVENT | Never (derived from stress windows) |
+| `peak_window` | `PeakWindow \| None` | Highest-summing rolling window (None except on active days) | Never |
+| `ramp_hours` | `int` | Ramp length (0+ hours) | Never |
+| `dispatch_window` | `DispatchWindow` (cached) | Planned ramp-up → peak → ramp-down slots | Derived, never stored twice |
+| `hours` | `tuple[HourState, ...]` (cached) | 24 hour classifications per day | Derived, never stored twice |
+
+**One stored fact per day:** `date`, `mode`, `peak_window`, `ramp_hours` are the only stored fields. `dispatch_window` and `hours` are cached properties derived from these three values. No two fields can disagree because hour classifications are never stored independently.
+
+**HourState classification:**
+- `NON_EVENT` – no storage operation allowed
+- `PRE_CHARGE` – wind charges storage
+- `ACTIVE_OFF_PEAK` – wind charges storage (during active event)
+- `ACTIVE_RAMP_UP` – discharge ramps up
+- `ACTIVE_PEAK` – discharge at peak
+- `ACTIVE_RAMP_DOWN` – discharge ramps down
+
+**Mutual exclusion by construction:** A charging hour never discharges, and a dispatch hour never charges. This is enforced at the classification level, not at runtime.
+
+---
+
 ### Execution state — local variables inside `simulator.simulate()`
 
 These are the values that evolve during the simulation loop. None of them are named types; they are plain Python primitives and lists.
 
 | Variable | Type | Role | Mutated |
 |---|---|---|---|
-| `soc` | `float` | Current state of charge (MWh). **The only true mutable simulation state.** | 48× per day (two `next_soc` calls per hour: one discharge step, one charge step) |
+| `soc` | `float` | Current state of charge (MWh). **The only true mutable simulation state.** | 2× per hour (discharge step, then charge step, both via `next_soc`) |
 | `baseline_peak` | `float` | Running maximum of `h.gross_load` over all simulated hours | Once per hour |
 | `reserve_peak` | `float` | Running maximum of `h.net_load` over all simulated hours | Once per hour |
-| `priorities` | `list[float]` | Pre-computed priority score for each window day | Never after construction |
+| `priorities` | `list[float]` | Pre-computed priority score for each window day (report-only, D13) | Never after construction |
 | `daily` | `list[DailyResult]` | Output accumulator — one frozen record appended per day | Once per day |
+| `day_schedules` | `list[DaySchedule]` | Read-only; sliced from the pre-built `OperatingSchedule` | Never after construction |
 
 `soc` is the simulation's entire evolving state. Everything else in the local scope is either a pre-computed input, a running aggregation for the output, or an output accumulator.
 
@@ -32,12 +70,12 @@ One record per simulated hour. Carries a snapshot of the simulation at the end o
 |---|---|---|
 | `ts_hour` | `int` | Input echo (hour index 0–23) |
 | `soc` | `float` | **Primary output** — SoC after both the discharge and charge steps |
-| `charge` | `float` | **Primary output** — energy charged this hour (MWh) |
+| `charge` | `float` | **Primary output** — energy charged this hour (MWh), from `recharge.charge_request_mw` |
 | `discharge` | `float` | **Redundant** — equals `discharge_peak + discharge_smooth` (see below) |
 | `discharge_peak` | `float` | **Primary output** — peak-shaving component of discharge |
 | `discharge_smooth` | `float` | **Primary output** — ramp-smoothing component of discharge |
 | `gross_load` | `float` | Input echo — load before storage acts |
-| `net_load` | `float` | Derived — `gross_load - discharge`; surplus-wind charge never enters net load (D2) |
+| `net_load` | `float` | Derived — `gross_load - discharge`; event-relative charge never enters net load (D2) |
 | `capacity_margin` | `float \| None` | Derived — `available_capacity_mw - net_load`; `None` when no capacity was supplied |
 
 `discharge` is stored alongside its two components even though `discharge = discharge_peak + discharge_smooth` always holds. This means any single discharge value is stored three times.
@@ -51,13 +89,13 @@ One record per simulated day. Summarises the day and owns its hourly records.
 | Field | Type | Classification |
 |---|---|---|
 | `date` | `date` | Input echo |
-| `budget` | `float` | Derived — energy the asset was allowed to discharge this day (MWh) |
-| `priority` | `float` | Derived — `0.7 × DemandPercentile + 0.3 × WindForecastFrac` |
+| `budget` | `float` | Derived — energy the asset was allowed to discharge on ACTIVE_EVENT days (0.0 otherwise) |
+| `priority` | `float` | Derived — `0.7 × DemandPercentile + 0.3 × WindForecastFrac`; report-only, no longer used for budget allocation (D13) |
 | `usable_energy` | `float` | Derived — `(soc_at_end_of_day - min_soc_mwh) × one_way_efficiency`; terminal-basis snapshot of `usable_energy(soc, asset)` at day close (F1) |
-| `recharge_sufficiency_ratio` | `float \| None` | Derived — `recharge_available / next_day_need`; `None` on the last day |
+| `recharge_sufficiency_ratio` | `float \| None` | Derived — `recharge_available / next_day_need`, where `next_day_need` is the full `usable_energy` at day close; no budget fraction applies; `None` on the last day |
 | `hourly` | `list[HourlyResult]` | **Primary output** — the 24 hourly records |
 
-All scalar fields are derived from either the input `DayProfile`, the `soc` value at a specific moment, or the `hourly` list. None of them represent independently evolving state.
+All scalar fields are derived from either the input `DayProfile`, the `DaySchedule` mode, the `soc` value at a specific moment, or the `hourly` list. None of them represent independently evolving state.
 
 ---
 
@@ -119,11 +157,17 @@ graph TD
         DP[DayProfile × N]
     end
 
+    subgraph "Immutable execution plan — built once, read-only"
+        OS[OperatingSchedule]
+        DS["DaySchedule × N\n(stored facts: date, mode, peak_window, ramp_hours)"]
+    end
+
     subgraph "Execution state — local to simulate()"
         SOC["soc: float\n(only true mutable state)"]
         BP["baseline_peak: float"]
         RP["reserve_peak: float"]
         PRI["priorities: list[float]\n(read-only after init)"]
+        DSL["day_schedules: list[DaySchedule]\n(sliced from OS)"]
         ACC["daily: list[DailyResult]\n(accumulator)"]
     end
 
@@ -137,7 +181,10 @@ graph TD
         RR[RunRecord]
     end
 
+    SA & CFG & DP --> OS
+    OS --> DS
     SA & CFG & DP --> SOC
+    DS --> SOC
     SOC --> HR
     HR --> DR
     DR --> ACC
@@ -145,19 +192,49 @@ graph TD
     SR --> RR
 ```
 
+**Key pattern (Phase 6):** The immutable execution plan (OS, DS) is built once and distributed to all consumers before the loop starts. No consumer re-derives the schedule — all operate from the same authoritative plan. This eliminates the prior duplication where charge/discharge rules appeared in three different modules with different versions of the same logic.
+
 ---
 
 ## Duplicated State
 
-### D1 — `SimulationResult.final_soc` duplicates `daily[-1].hourly[-1].soc`
+### Phase 6 Consolidation
+
+The event-relative recharge architecture eliminated a major class of duplication by introducing the immutable `OperatingSchedule` as a single source of truth for hour classification. Prior to Phase 6:
+
+- `simulator._surplus_wind_recharge_mwh` implemented the recharge forecast
+- `initial_soc.charge_from_wind` implemented the pre-event charge rule
+- `metrics.recharge_opportunity_mw` implemented the post-hoc recharge opportunity
+
+All three used different clamp rules (load-netting vs. no-netting) and could diverge silently. Phase 6 consolidated these into:
+
+- `recharge.charge_request_mw(wind, hour_state)` — single authoritative dispatch-time rule
+- `recharge.recharge_opportunity_mwh(days, day_schedules)` — single planning signal for budget
+
+Both delegate the hour-state classification to the pre-built `OperatingSchedule`. No consumer re-derives the schedule.
+
+---
+
+### Remaining Duplications
+
+### D1 — `DaySchedule` stores only facts; dispatch_window and hours are cached properties
+
+**Design principle (not a flaw):** `DaySchedule` stores exactly three facts per day: `date`, `mode`, `peak_window`, `ramp_hours`. Two derived properties are cached:
+
+- `dispatch_window` — the planned ramp-up → peak → ramp-down slots for the day
+- `hours` — the 24 `HourState` values for the day
+
+Because dispatch_window and hours are derived from the three facts and cached (never stored twice), **no two fields can disagree**. This was the original motivation for introducing `DaySchedule`: eliminating the bug class where hour classifications could be stored separately and drift apart.
+
+### D2 — `SimulationResult.final_soc` duplicates `daily[-1].hourly[-1].soc`
 
 `final_soc` is the SoC at the end of the last hour of the last simulated day. That same value is already stored as `daily[-1].hourly[-1].soc`. The field exists for O(1) access convenience. There are now two sources of truth; if a bug in the post-processing path overwrites one but not the other, they diverge silently.
 
-### D2 — `SimulationResult.baseline_peak_mw` and `reserve_peak_mw` duplicate the hourly record
+### D3 — `SimulationResult.baseline_peak_mw` and `reserve_peak_mw` duplicate the hourly record
 
-Both values are the maximum of a field over all `HourlyResult` records. They are re-derivable from `daily` in O(days × 24) time. They exist because `simulate()` computes them cheaply during the loop (one comparison per hour) rather than requiring a post-hoc scan. The tradeoff is the same as D1: two sources of truth, and the values are not provably consistent with `daily` without re-scanning.
+Both values are the maximum of a field over all `HourlyResult` records. They are re-derivable from `daily` in O(days × 24) time. They exist because `simulate()` computes them cheaply during the loop (one comparison per hour) rather than requiring a post-hoc scan. The tradeoff is the same as D2: two sources of truth, and the values are not provably consistent with `daily` without re-scanning.
 
-### D3 — `HourlyResult.discharge` duplicates `discharge_peak + discharge_smooth`
+### D4 — `HourlyResult.discharge` duplicates `discharge_peak + discharge_smooth`
 
 `discharge_peak` and `discharge_smooth` are the two allocation components. Their sum is `discharge`. All three are stored. Storing the total alongside its components means any query that needs the total (e.g., `sum(h.discharge for ...)`) works without arithmetic, but the representation is over-determined: changing `discharge_peak` without updating `discharge` would produce an inconsistent record. Since `HourlyResult` is frozen this cannot happen at runtime, but it means the schema implies a constraint (`discharge = discharge_peak + discharge_smooth`) that is nowhere enforced by the type system.
 
@@ -170,15 +247,17 @@ Both values are the maximum of a field over all `HourlyResult` records. They are
 | `soc` (local) | Yes | Core simulation variable; advances every step |
 | `baseline_peak`, `reserve_peak` (local) | Yes | Running max trackers |
 | `daily` list (local) | Yes | Accumulator; each element is frozen |
+| `OperatingSchedule` | No (frozen) | Execution plan; built once, read by all consumers |
+| `DaySchedule` | No (frozen) | One day's plan; stored facts never change |
 | `HourlyResult` | No (frozen) | Immutable snapshot |
 | `DailyResult` | No (frozen) | Immutable snapshot |
 | `SimulationResult` | **Technically yes** (not frozen) | API layer mutates it post-creation |
 | `RunRecord` | Yes | API lifecycle state machine |
 | `StorageAsset`, `Config`, `DayProfile` | No (frozen) | Inputs; must not change during simulation |
 
-The single structural anomaly is `SimulationResult` being not frozen. Every other domain output object is frozen. The not-frozen status allows the API layer to attach the result to a `RunRecord` after the fact, but it also means the engine's output record can be mutated by any holder.
+**Phase 6 improvement:** The execution plan (`OperatingSchedule`, `DaySchedule`) is now explicitly immutable and frozen, enforcing the design principle "one stored fact per day" at the type level. Prior to Phase 6, hour classifications could be (and were) stored and re-derived independently in different modules, violating this principle.
 
----
+The single structural anomaly remains: `SimulationResult` being not frozen. Every other domain output object is frozen. The not-frozen status allows the API layer to attach the result to a `RunRecord` after the fact, but it also means the engine's output record can be mutated by any holder.
 
 ## Proposed Consolidated Model
 

@@ -8,9 +8,11 @@ question is a UI/copy decision, not a code fork (FACT_CHECK inconsistency #1).
 from __future__ import annotations
 
 import math
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import date
 from enum import StrEnum
+from functools import cached_property
 from typing import Protocol
 
 HOURS_PER_DAY = 24
@@ -362,3 +364,220 @@ class DailyResult:
     usable_energy: float
     recharge_sufficiency_ratio: float | None
     hourly: list[HourlyResult]
+
+
+class DayMode(StrEnum):
+    """Which of three regimes a simulated day falls into, decided by ``schedule.build_schedule``.
+
+    ``StrEnum``, for the reason ``WrapConvention`` gives: report dictionaries and
+    ``json.dumps(asdict(cfg))`` need a JSON-serializable value.
+    """
+
+    NON_EVENT = "non_event"
+    PRE_CHARGE = "pre_charge"
+    ACTIVE_EVENT = "active_event"
+
+
+class HourState(StrEnum):
+    """The classification of one hour of one day. The single source of truth for
+    whether an hour charges from wind, discharges, or does neither.
+
+    One flat enum, not a ``(DayMode, hour role)`` pair, on purpose: a pair permits
+    the invalid combination ``(NON_EVENT, ACTIVE_PEAK)``, and this type cannot
+    represent it.
+    """
+
+    NON_EVENT = "non_event"
+    PRE_CHARGE = "pre_charge"
+    ACTIVE_OFF_PEAK = "active_off_peak"
+    ACTIVE_RAMP_UP = "active_ramp_up"
+    ACTIVE_PEAK = "active_peak"
+    ACTIVE_RAMP_DOWN = "active_ramp_down"
+
+    @property
+    def day_mode(self) -> DayMode:
+        """The ``DayMode`` this hour state belongs to."""
+        if self is HourState.NON_EVENT:
+            return DayMode.NON_EVENT
+        if self is HourState.PRE_CHARGE:
+            return DayMode.PRE_CHARGE
+        return DayMode.ACTIVE_EVENT
+
+    @property
+    def charges_from_wind(self) -> bool:
+        """True on ``PRE_CHARGE`` and ``ACTIVE_OFF_PEAK`` hours, the two hour
+        states the wind-to-storage rule applies to (``recharge.charge_request_mw``)."""
+        return self in (HourState.PRE_CHARGE, HourState.ACTIVE_OFF_PEAK)
+
+    @property
+    def is_dispatch_hour(self) -> bool:
+        """True on ``ACTIVE_RAMP_UP``, ``ACTIVE_PEAK`` and ``ACTIVE_RAMP_DOWN``
+        hours, the three hour states ``dispatch.allocate_discharge`` may deliver to."""
+        return self in (
+            HourState.ACTIVE_RAMP_UP,
+            HourState.ACTIVE_PEAK,
+            HourState.ACTIVE_RAMP_DOWN,
+        )
+
+
+@dataclass(frozen=True)
+class DispatchWindow:
+    """The planned ramp-up -> peak -> ramp-down block for one active-event day.
+
+    Slots are day-local hour indices. A slot may be negative or 24 and above:
+    those slots are planned but do not exist in the day, and nothing is
+    delivered in them. Only ``peak_slots`` and ``ramp_hours`` are stored; the two
+    ramp groups are derived, so no constructor argument can contradict
+    ``peak_slots`` and put the two out of sync.
+    """
+
+    peak_slots: tuple[int, ...]
+    ramp_hours: int
+
+    def __post_init__(self) -> None:
+        if not self.peak_slots:
+            raise ValueError("peak_slots must not be empty")
+        for prev, nxt in zip(self.peak_slots, self.peak_slots[1:], strict=False):
+            if nxt != prev + 1:
+                raise ValueError("peak_slots must be a run of consecutive ascending integers")
+        if not any(0 <= s <= 23 for s in self.peak_slots):
+            raise ValueError("peak_slots must contain at least one slot in 0..23")
+        if self.ramp_hours < 0:
+            raise ValueError("ramp_hours must be >= 0")
+
+    @classmethod
+    def around(cls, peak_window: PeakWindow, ramp_hours: int) -> DispatchWindow:
+        """Build the window from a ``PeakWindow``, using its slot form
+        (``start_hour`` and the length of ``load_mw``), never ``clock_hours``:
+        under ``WRAP_TO_NEXT_DAY`` the clock hours wrap back to 0 while the
+        slots keep counting past 23, and the slot form is what truncation needs."""
+        start = peak_window.start_hour
+        return cls(
+            peak_slots=tuple(range(start, start + len(peak_window.load_mw))),
+            ramp_hours=ramp_hours,
+        )
+
+    @property
+    def ramp_up_slots(self) -> tuple[int, ...]:
+        start = self.peak_slots[0] - self.ramp_hours
+        return tuple(range(start, self.peak_slots[0]))
+
+    @property
+    def ramp_down_slots(self) -> tuple[int, ...]:
+        start = self.peak_slots[-1] + 1
+        return tuple(range(start, start + self.ramp_hours))
+
+    @property
+    def planned_slot_count(self) -> int:
+        return len(self.peak_slots) + 2 * self.ramp_hours
+
+    @property
+    def peak_hours(self) -> tuple[int, ...]:
+        """``peak_slots`` restricted to the hours that exist in the day, 0..23."""
+        return tuple(s for s in self.peak_slots if 0 <= s <= 23)
+
+    @property
+    def ramp_up_hours(self) -> tuple[int, ...]:
+        return tuple(s for s in self.ramp_up_slots if 0 <= s <= 23)
+
+    @property
+    def ramp_down_hours(self) -> tuple[int, ...]:
+        return tuple(s for s in self.ramp_down_slots if 0 <= s <= 23)
+
+    @property
+    def dispatch_hours(self) -> tuple[int, ...]:
+        """Every in-day slot, ascending: the union of ``ramp_up_hours``,
+        ``peak_hours`` and ``ramp_down_hours``."""
+        return tuple(
+            sorted(set(self.ramp_up_hours) | set(self.peak_hours) | set(self.ramp_down_hours))
+        )
+
+
+@dataclass(frozen=True)
+class DaySchedule:
+    """One day's operating classification: the mode, the peak window the
+    searcher returned, and the ramp length. ``dispatch_window`` and ``hours``
+    are derived, not stored, so no two fields can disagree about which hour does
+    what — the exact bug class this type exists to remove.
+
+    Both derived properties are ``functools.cached_property``, computed once and
+    shared by every consumer that slices the same ``OperatingSchedule``.
+    """
+
+    date: date
+    mode: DayMode
+    peak_window: PeakWindow | None
+    ramp_hours: int
+
+    def __post_init__(self) -> None:
+        if (self.peak_window is None) == (self.mode is DayMode.ACTIVE_EVENT):
+            raise ValueError("peak_window must be set if and only if mode is ACTIVE_EVENT")
+        if self.ramp_hours < 0:
+            raise ValueError("ramp_hours must be >= 0")
+        if self.peak_window is None and self.ramp_hours != 0:
+            raise ValueError("ramp_hours must be 0 when peak_window is None")
+
+    @cached_property
+    def dispatch_window(self) -> DispatchWindow | None:
+        if self.peak_window is None:
+            return None
+        return DispatchWindow.around(self.peak_window, self.ramp_hours)
+
+    @cached_property
+    def hours(self) -> tuple[HourState, ...]:
+        """24 ``HourState`` values, one per hour of the day."""
+        if self.mode is DayMode.NON_EVENT:
+            return (HourState.NON_EVENT,) * HOURS_PER_DAY
+        if self.mode is DayMode.PRE_CHARGE:
+            return (HourState.PRE_CHARGE,) * HOURS_PER_DAY
+        window = self.dispatch_window
+        assert window is not None  # guaranteed by __post_init__ on an ACTIVE_EVENT day
+        peak = set(window.peak_hours)
+        ramp_up = set(window.ramp_up_hours)
+        ramp_down = set(window.ramp_down_hours)
+        states = []
+        for h in range(HOURS_PER_DAY):
+            if h in peak:
+                states.append(HourState.ACTIVE_PEAK)
+            elif h in ramp_up:
+                states.append(HourState.ACTIVE_RAMP_UP)
+            elif h in ramp_down:
+                states.append(HourState.ACTIVE_RAMP_DOWN)
+            else:
+                states.append(HourState.ACTIVE_OFF_PEAK)
+        return tuple(states)
+
+    def charges_from_wind(self, hour: int) -> bool:
+        return self.hours[hour].charges_from_wind
+
+    def is_dispatch_hour(self, hour: int) -> bool:
+        return self.hours[hour].is_dispatch_hour
+
+
+@dataclass(frozen=True)
+class OperatingSchedule:
+    """The full-span operating classification, one ``DaySchedule`` per day, in
+    strictly ascending date order. Built by ``schedule.build_schedule``; every
+    consumer reads it and none re-derives the classification rules."""
+
+    days: tuple[DaySchedule, ...]
+
+    def __post_init__(self) -> None:
+        for prev, nxt in zip(self.days, self.days[1:], strict=False):
+            if not nxt.date > prev.date:
+                raise ValueError("days must be strictly ascending by date")
+
+    def for_date(self, day: date) -> DaySchedule:
+        for d in self.days:
+            if d.date == day:
+                return d
+        raise ValueError(f"date {day} not found in schedule")
+
+    def slice_for(self, dates: Sequence[date]) -> tuple[DaySchedule, ...]:
+        by_date = {d.date: d for d in self.days}
+        out: list[DaySchedule] = []
+        for dt in dates:
+            if dt not in by_date:
+                raise ValueError(f"date {dt} not found in schedule")
+            out.append(by_date[dt])
+        return tuple(out)

@@ -38,8 +38,9 @@ from owr.metrics import equivalent_full_cycles as _equivalent_full_cycles
 from owr.metrics import recharge_capacity_mismatch_fraction as _recharge_capacity_mismatch_fraction
 from owr.metrics import recharge_opportunity_mw as _recharge_opportunity_mw
 from owr.models import HOURS_PER_DAY, DayProfile, StorageAsset, StressWindow
+from owr.schedule import build_schedule
 from owr.simulator import simulate
-from owr.stress_finder import find_stress_windows_at_percentile, with_peak_hourly_load
+from owr.stress_finder import find_stress_windows_for_config, with_peak_hourly_load
 from owr.version import code_version
 
 # Reporting-only assumption: no engine function takes it, so it is not a Config
@@ -112,12 +113,14 @@ _OPEN_QUESTIONS_STATIC = {
     "recharge_opportunity_definition": {
         "flags": [],
         "note": (
-            "Component 5 lists recharge_opportunity | MWh | @. Implemented as "
-            "surplus wind in the hour, before the state-of-charge and power "
-            "clamps. A forward-looking forecast reading is possible and would "
-            "measure forecast error instead."
+            "Component 5 lists recharge_opportunity | MWh | @. Now a three-way, "
+            "schedule-driven rule (D4): pre-charge and off-peak hours report "
+            "the hour's wind directly; peak and ramp hours keep the old "
+            "surplus-above-net-load formula; non-event hours report zero. A "
+            "forward-looking forecast reading is possible and would measure "
+            "forecast error instead."
         ),
-        "handoff_ref": "docs/archive/plans/PLAN_METRICS_COMPONENT7.md open questions",
+        "handoff_ref": "docs/archive/plans/PLAN_EVENT_RELATIVE_RECHARGE.md Section 10",
     },
     "recharge_capacity_denominator": {
         "flags": [],
@@ -132,24 +135,24 @@ _OPEN_QUESTIONS_STATIC = {
     "wind_charge_source": {
         "flags": [],
         "note": (
-            "F5, docs/archive/plans/PLAN_REVIEW_FIXES.md: pre-event and in-window charging both "
-            "take surplus wind above the hour's load, so the rule cannot tell an "
-            "ISO-NE system-wide wind series (which serves load and is almost "
-            "never surplus) from a dedicated offshore farm whose output would go "
-            "to the reserve first. The shipped profiles carry system-wide wind, "
-            "so this rule returns the starting SoC unchanged on both."
+            "Event-relative recharge: pre-charge and off-peak hours route ALL "
+            "their wind to storage, not just the surplus above load, so the "
+            "rule cannot tell an ISO-NE system-wide wind series (which serves "
+            "load and is almost never surplus) from a dedicated offshore farm "
+            "whose output would go to the reserve first. The model assumes the "
+            "dedicated reading on pre-charge and off-peak hours."
         ),
-        "handoff_ref": "docs/archive/plans/PLAN_REVIEW_FIXES.md Phase 5",
+        "handoff_ref": "docs/architecture/event_relative_recharge.md Section 12",
     },
     "wind_multiplier_range": {
         "flags": ["--wind-multiplier"],
         "note": (
             "Component 1 User Inputs lists wind_generation_multiplier with a "
             "validation range of @ and describes the field as whole-number. "
-            "Implemented as any finite value >= 0.0, default 1.0. At 1.0 the "
-            "shipped profiles still charge 0.0 MWh (ISO-NE system-wide wind "
-            "almost never exceeds system load); a multiplier near 5 is what "
-            "makes surplus wind appear."
+            "Implemented as any finite value >= 0.0, default 1.0. Event-relative "
+            "recharge routes all pre-charge and off-peak wind to storage, so "
+            "charging is non-zero at the identity multiplier; the multiplier "
+            "scales an existing quantity rather than creating one."
         ),
         "handoff_ref": "docs/source/2026-08-05_Software_Architecture_Documentation.md Component 1",
     },
@@ -184,9 +187,47 @@ _OPEN_QUESTIONS_STATIC = {
             "its caller and fixes no definition of a cycle. This engine "
             "supplies the remaining days of the current window (D14); the "
             "source's own cycle unit is a stress event, which this branch "
-            "does not implement as the basis."
+            "does not implement as the basis. The recharge term is an "
+            "opportunity over the remaining horizon (PLAN_BUDGET_FULL_TANK_FIX.md): "
+            "it carries no state of charge, by construction, since "
+            "recharge.recharge_opportunity_mwh takes no starting SoC and no "
+            "StorageAsset. It applies no power clamp either: on a large tank "
+            "with small charge power the term can exceed what the asset "
+            "could absorb, the two-term minimum degenerates to its first "
+            "term, and the reported daily budget can exceed what one day "
+            "could deliver. Delivered energy is unaffected, because "
+            "dispatch.allocate_discharge clips each hour at power_mw. "
+            "Whether to cap the term at the charge power stays open. D15: on "
+            "a span with two or more qualifying windows, remaining_stress_days "
+            "counts every remaining day (gap days and a later unrelated "
+            "event included), while the opportunity sum is schedule-aware "
+            "and credits gap days (PRE_CHARGE) but not the tail after the "
+            "last window (NON_EVENT). The two terms no longer count the "
+            "same set of days; the mismatch is now visible in budget values, "
+            "so this needs a team answer sooner than it did. Fixing that "
+            "means choosing a cycle basis, which this change does not do."
         ),
         "handoff_ref": "docs/source/2026-08-05_Software_Architecture_Documentation.md Component 5",
+    },
+    "ramp_duration": {
+        "flags": [],
+        "note": (
+            "default_ramp_hours has no source value. 1 hour is the smallest "
+            "value that makes the ramp-up -> peak -> ramp-down sandwich real, "
+            "giving a 5-hour dispatch block at the settled 3-hour peak window."
+        ),
+        "handoff_ref": "docs/architecture/event_relative_recharge.md Section 10",
+    },
+    "peak_window_wrap": {
+        "flags": [],
+        "note": (
+            "The default is now stop_at_midnight (Section 9), so a dispatch "
+            "block never crosses midnight. Under wrap_to_next_day a day whose "
+            "highest triplet wraps loses its out-of-day peak slot: up to "
+            "1 / window_hours of the peak pool goes unspent, and that energy "
+            "is not moved to another hour (D14, R7)."
+        ),
+        "handoff_ref": "docs/architecture/event_relative_recharge.md Section 9",
     },
     "robustness_metric_definitions": {
         "flags": [],
@@ -318,9 +359,10 @@ def build_parser() -> argparse.ArgumentParser:
         help=(
             f"scale historical wind by this factor before the engine sees it "
             f"(default {cfg.default_wind_generation_multiplier}, sourced: Architecture "
-            "2026-08-05 Component 1) [OPEN: wind_multiplier_range]. At 1.0 the shipped "
-            "profiles still charge 0.0 MWh: ISO-NE system-wide wind almost never "
-            "exceeds system load. A multiplier near 5 is what makes surplus wind appear."
+            "2026-08-05 Component 1) [OPEN: wind_multiplier_range]. Event-relative "
+            "recharge routes all pre-charge and off-peak wind to storage, so charging "
+            "is non-zero at the identity multiplier; the multiplier scales an existing "
+            "quantity rather than creating one."
         ),
     )
     parser.add_argument(
@@ -362,15 +404,6 @@ def build_parser() -> argparse.ArgumentParser:
         type=_finite_float,
         default=cfg.default_smooth_weight,
         help=f"ramp-smoothing dispatch weight (default {cfg.default_smooth_weight})",
-    )
-    parser.add_argument(
-        "--energy-budget-fraction",
-        type=_finite_float,
-        default=cfg.energy_budget_fraction,
-        help=(
-            f"max fraction of usable energy committed per day "
-            f"(default {cfg.energy_budget_fraction})"
-        ),
     )
     parser.add_argument(
         "--priority-demand-weight",
@@ -447,7 +480,6 @@ def _run(args: argparse.Namespace) -> int:
     cfg = Config(
         priority_demand_weight=args.priority_demand_weight,
         priority_wind_weight=args.priority_wind_weight,
-        energy_budget_fraction=args.energy_budget_fraction,
         default_efficiency=args.efficiency,
         default_soc_floor_frac=args.soc_floor_frac,
         default_strategic_reserve_frac=args.strategic_reserve_frac,
@@ -458,15 +490,14 @@ def _run(args: argparse.Namespace) -> int:
     )
 
     # Phase 7 (change 3): integer-percentile comparison, not the MWh quantile.
-    # percentile_floor_percent = round(x * 100.0, 9) is D1's guard against the
-    # float trap (0.29 * 100.0 == 28.999999999999996).
-    windows = find_stress_windows_at_percentile(
-        days,
-        args.min_stress_window_days,
-        percentile_floor_percent=round(args.severity_percentile * 100.0, 9),
-        rounding=cfg.stress_percentile_rounding,
-    )
+    # find_stress_windows_for_config centralizes the percentile_floor_percent =
+    # round(x * 100.0, 9) float-trap guard (D1).
+    windows = find_stress_windows_for_config(days, cfg)
     windows = with_peak_hourly_load(windows, days)
+    # The schedule is built over ALL file days, so lead days and span days
+    # share one classification (D2). cli._run and api.create_run each build
+    # exactly one schedule and pass the same object everywhere.
+    schedule = build_schedule(days, stress_windows=windows, config=cfg)
 
     if args.list_windows:
         _render_list_windows(day_set, windows, args, sys.stdout)
@@ -529,12 +560,17 @@ def _run(args: argparse.Namespace) -> int:
     if shortfall_note:
         print(f"warning: {shortfall_note}", file=sys.stderr)
 
-    soc_at_start = charge_from_wind(initial_soc_mwh, lead, asset) if lead else initial_soc_mwh
+    soc_at_start = (
+        charge_from_wind(initial_soc_mwh, lead, asset, schedule=schedule)
+        if lead
+        else initial_soc_mwh
+    )
 
     result = simulate(
         asset,
         span,
         starting_soc=soc_at_start,
+        schedule=schedule,
         available_capacity_mw=args.available_capacity_mw,
         config=cfg,
         peak_weight=args.peak_weight,
@@ -554,6 +590,7 @@ def _run(args: argparse.Namespace) -> int:
         asset=asset,
         cfg=cfg,
         result=result,
+        schedule=schedule,
     )
 
     if args.format == "json":
@@ -609,6 +646,7 @@ def _build_report(
     asset: StorageAsset,
     cfg: Config,
     result,
+    schedule,
 ) -> dict:
     energy_discharged = sum(h.discharge for d in result.daily for h in d.hourly)
     energy_charged = sum(h.charge for d in result.daily for h in d.hourly)
@@ -626,6 +664,7 @@ def _build_report(
                 hourly_wind_mw=wind,
                 hourly_load_mw=[h.gross_load for h in day_result.hourly],
                 hourly_discharge_mw=[h.discharge for h in day_result.hourly],
+                hourly_state=list(schedule.for_date(day_profile.date).hours),
             )
         )
         actual.extend(h.charge for h in day_result.hourly)
@@ -667,9 +706,17 @@ def _build_report(
     for d in result.daily:
         discharged = sum(h.discharge for h in d.hourly)
         charged = sum(h.charge for h in d.hourly)
+        day_schedule = schedule.for_date(d.date)
+        peak_window_hours = (
+            list(day_schedule.dispatch_window.peak_hours)
+            if day_schedule.dispatch_window is not None
+            else None
+        )
         daily_out.append(
             {
                 "date": d.date.isoformat(),
+                "mode": day_schedule.mode.value,
+                "peak_window_hours": peak_window_hours,
                 "priority": d.priority,
                 "budget": d.budget,
                 "usable_energy": d.usable_energy,
@@ -681,6 +728,7 @@ def _build_report(
                 "hourly": [
                     {
                         "ts_hour": h.ts_hour,
+                        "state": day_schedule.hours[h.ts_hour].value,
                         "soc": h.soc,
                         "charge": h.charge,
                         "discharge": h.discharge,
@@ -712,16 +760,18 @@ def _build_report(
         ),
         _oq(
             "recharge_opportunity_definition",
-            "surplus wind after serving net load, before the SoC and power clamps",
+            "wind on pre-charge/off-peak hours; surplus formula on peak/ramp hours",
         ),
         _oq("recharge_capacity_denominator", "total_mwh - min_soc_mwh"),
         _oq(
             "wind_charge_source",
-            "surplus wind above the hour's net load, charge and pre-charge alike",
+            "full wind on pre-charge and off-peak hours",
         ),
         _oq("wind_multiplier_range", args.wind_multiplier),
         _oq("priority_weighting_retired", "report-only, not passed to daily_budget"),
         _oq("recharge_cycle_basis", "remaining window days"),
+        _oq("ramp_duration", cfg.default_ramp_hours),
+        _oq("peak_window_wrap", cfg.default_peak_window_wrap.value),
     ]
 
     return {
@@ -889,7 +939,6 @@ def _render_table(report: dict, args: argparse.Namespace, out: TextIO) -> None:
         f"{asset['strategic_reserve_frac']:.3f} = {floor_frac:.3f} -> "
         f"{asset['min_soc_mwh']:,.0f} MWh   [OPEN: reserve_usage_rules]\n"
     )
-    out.write(f"  energy budget        {cfg['energy_budget_fraction']:.3f} of usable energy\n")
     out.write(
         f"  priority weights     {cfg['priority_demand_weight']:.3f} demand / "
         f"{cfg['priority_wind_weight']:.3f} wind\n"
@@ -943,6 +992,7 @@ def _render_table(report: dict, args: argparse.Namespace, out: TextIO) -> None:
     # can never drift apart regardless of how many digits a value has.
     daily_columns = [
         ("date", 10),
+        ("mode", 13),
         ("priority", 8),
         ("budget MWh", 12),
         ("usable MWh (eod)", 17),
@@ -951,10 +1001,10 @@ def _render_table(report: dict, args: argparse.Namespace, out: TextIO) -> None:
         ("gross peak MW", 14),
         ("net peak MW", 12),
     ]
-    # The date column is left-aligned and the numeric columns right-aligned, so each
-    # header sits over the edge its values align to.
+    # The date and mode columns are left-aligned and the numeric columns
+    # right-aligned, so each header sits over the edge its values align to.
     header_cells = [
-        header.ljust(width) if i == 0 else header.rjust(width)
+        header.ljust(width) if i in (0, 1) else header.rjust(width)
         for i, (header, width) in enumerate(daily_columns)
     ]
     out.write("  " + "   ".join(header_cells).rstrip() + "\n")
@@ -963,13 +1013,14 @@ def _render_table(report: dict, args: argparse.Namespace, out: TextIO) -> None:
         ratio_str = f"{ratio:.3f}" if ratio is not None else "-"
         row_values = [
             str(d["date"]).ljust(daily_columns[0][1]),
-            f"{d['priority']:.3f}".rjust(daily_columns[1][1]),
-            f"{d['budget']:,.0f}".rjust(daily_columns[2][1]),
-            f"{d['usable_energy']:,.0f}".rjust(daily_columns[3][1]),
-            f"{d['discharged_mwh']:,.0f}".rjust(daily_columns[4][1]),
-            ratio_str.rjust(daily_columns[5][1]),
-            f"{d['gross_peak_mw']:,.0f}".rjust(daily_columns[6][1]),
-            f"{d['net_peak_mw']:,.0f}".rjust(daily_columns[7][1]),
+            d["mode"].ljust(daily_columns[1][1]),
+            f"{d['priority']:.3f}".rjust(daily_columns[2][1]),
+            f"{d['budget']:,.0f}".rjust(daily_columns[3][1]),
+            f"{d['usable_energy']:,.0f}".rjust(daily_columns[4][1]),
+            f"{d['discharged_mwh']:,.0f}".rjust(daily_columns[5][1]),
+            ratio_str.rjust(daily_columns[6][1]),
+            f"{d['gross_peak_mw']:,.0f}".rjust(daily_columns[7][1]),
+            f"{d['net_peak_mw']:,.0f}".rjust(daily_columns[8][1]),
         ]
         out.write("  " + "   ".join(row_values).rstrip() + "\n")
     out.write("\n")

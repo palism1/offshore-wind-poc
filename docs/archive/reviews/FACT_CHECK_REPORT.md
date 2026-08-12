@@ -435,3 +435,106 @@ should be stated wherever the event list is published. **Raise with Mitchell.**
 Thresholds were computed through the tested `owr.etl.daily` / `owr.etl.transform` modules.
 The `etl transform` CLI subcommand is **not yet wired** (it still prints "not implemented
 yet"); this run drove the modules directly. Wiring it is the next implementation step.
+
+---
+
+# Fact-Check Addendum — 2026-08-11
+
+Re-read pass. The source documents were re-fetched and diffed against the versions the
+2026-07-16/07-28/07-30 passes above checked (`2026-07-27_Overview_Document.md` →
+`2026-08-05_Overview_Document.md`; `2026-07-30_Software_Architecture_Documentation.md` →
+`2026-08-04_Software_Architecture_Documentation.md` → `2026-08-05_Software_Architecture_Documentation.md`,
+the latter two content-identical, differing only in markdown export escaping). External
+facts already Verified above (FERC Order 2023/2023-A, StEnSea specs, ISO-NE record demand,
+Gulf of Maine basin depths) are stable, sourced primary facts unlikely to move on a
+three-week horizon and were not re-derived; this pass focuses on what changed in the source
+documents themselves and one time-sensitive external claim.
+
+## Verified
+
+- **The source spec's own `usable_energy(t)` formula never included an energy-budget
+  fraction.** `2026-08-05_Software_Architecture_Documentation.md`, Archived §Step 7:
+  `usable_energy(t) = soc(t) - soc_floor - strategic_reserve`. No 80% (or any other)
+  fraction multiplies this expression anywhere in the current source document. This
+  directly supports the just-completed removal of `Config.energy_budget_fraction` from
+  `src/owr/config.py` — the engine's `usable_energy(soc, asset)` now matches the source
+  formula exactly, with the reserve floor as the only constraint.
+- **Stress Window Effectiveness's denominator was corrected in the source between
+  2026-07-27 and 2026-08-05, and the code already agrees with the corrected version.**
+  Old (07-27): `SWE = capacity_dispatched(t) / (oil + gas + wind)`. New (08-05):
+  `SWE = capacity_dispatched(t) / (oil + gas)` — wind dropped from the denominator. This
+  resolves 2026-07-30 addendum Metric Defect #2/#3 (SWE could exceed 100% when
+  `capacity_dispatched` exceeded a denominator that excluded nuclear/hydro/imports but
+  included wind, and the two percentage metrics divided by different, inconsistent
+  wholes). `src/owr/metrics.py:524-556` (`stress_window_effectiveness_fraction`) already
+  implements `oil + gas` only, citing `docs/source/2026-08-05_Metric_Thresholds_v1.1.pdf`
+  directly. Source doc, Metric Thresholds PDF, and code now agree.
+- **Recharge Capacity Mismatch's denominator variable was corrected to a name that is
+  actually defined.** Old (07-27): divides by `average_cycle_recharge_utilization`
+  (defined nowhere, per 07-30 addendum Internal Inconsistency #6 / Metric Defect #6). New
+  (08-05): divides by `average_recharge_mismatch`, which the same document defines two
+  lines above. `src/owr/metrics.py:334-352` (`average_recharge_mismatch_mwh`) and
+  `:352-...` (`recharge_capacity_mismatch_fraction`) already use this corrected pairing.
+
+## Contradicted — corrections to our own documents
+
+- **The "80% energy budget rule" is absent from the source document as of 2026-08-04,
+  three weeks before today's code removal.** `2026-07-30_Software_Architecture_Documentation.md`
+  Archived §Step 7 (the version the 07-16 fact-check pass and the shipped
+  `energy_budget_fraction` were both built against) contains: "Calculate what 80% of the
+  total energy budget for the stress window ... Product of total energy budget times
+  0.80" and "A simple average of 80% energy budget divided by number of days across the
+  window." These bullets do **not** appear in `2026-08-04_Software_Architecture_Documentation.md`
+  or `2026-08-05_Software_Architecture_Documentation.md` — the equivalent Step 7 section
+  in both later revisions ends at the `usable_energy`/dispatch-window bullets with no 80%
+  step at all. The source of truth dropped this rule before the codebase did; today's
+  removal of `Config.energy_budget_fraction` (this session) brings the code in line with
+  a change the architecture document had already made. `CLAUDE.md`'s `config.py` row
+  still says "80% budget" (flagged stale in the prior session, deferred to the user) —
+  this addendum adds a second, independent reason it needs updating: it no longer
+  describes either the code or the current source document.
+
+## Unverifiable — time-sensitive, re-check before citing
+
+- **"26 interconnection requests" / "~8 GW combined capacity" for the ISO-NE Transitional
+  Cluster Study may already be stale.** The Overview document's Regulatory Policies
+  section (both 07-27 and 08-05 versions, unchanged) states 26 requests (21 storage, 2
+  solar, 3 wind) completing by August 6, 2026 — this was independently confirmed in the
+  2026-07-16 and 2026-07-30 passes above. Today is 2026-08-11, five days past that
+  completion date. A web search found ISO-NE's **interim** results (released 2026-06-24,
+  developer comment period closed 2026-07-07) cover **23 qualified projects representing
+  ~4.8 GW** — three fewer projects and roughly 3.2 GW less capacity than the 26-request /
+  ~8 GW figure our docs cite, per EPE Consulting's summary
+  (https://epeconsulting.com/epe-intelligence/news/iso-nes-transitional-cluster-study-tc2-results-are-in-what-developers-need-to-know).
+  No final report (due "early August 2026" per the same source) was found in search
+  results as of this pass — it may not yet be published, or may not yet be indexed.
+  **Action: check iso-ne.com directly for the final TC2 report before repeating "26
+  requests" or "~8 GW" in any external-facing deliverable** — the number has already
+  moved once between the queue-entry count and the interim study, and may move again in
+  the final report.
+- **Interim interconnection cost figures (~$3.2B total, ~$2.5B network upgrades) are new
+  information, not yet in any project document, and sourced only from a secondary
+  summary (EPE Consulting), not the ISO-NE filing itself.** Per this skill's own
+  guidance, a secondary summary is not a source of record for a claim of this kind — if
+  the team wants to cite interconnection cost figures, locate the underlying ISO-NE TC2
+  interim/final report at iso-ne.com or the relevant filing before use.
+
+## Internal inconsistencies — carried over, still open
+
+- **`docs/architecture/architecture_overview.md` still states round-trip efficiency
+  default as 1.00 ("100% efficient baseline"); the shipped default is 0.7225** (Week 4B,
+  `src/owr/config.py:200`, `default_efficiency: float = 0.7225`). Same error appears in
+  `docs/engineering_review.md`'s Planning Assumptions table ("Round-trip efficiency | 1.00
+  | ..."). This was flagged as pre-existing, out-of-scope staleness during the
+  `energy_budget_fraction` removal session (2026-08-11, earlier today) and is repeated
+  here because it is a genuine code/doc inconsistency this skill's checklist is meant to
+  catch, not because anything new was found. Not yet fixed.
+- **Success Criteria is still "TBD"** in `2026-08-05_Overview_Document.md` (line 240),
+  unchanged since the 2026-07-30 third-pass finding. No software acceptance criteria can
+  be derived from the brief until this is written.
+
+## Best-Practice Notes
+
+- No new best-practice research this pass; the 2026-07-16 notes (MPC rolling horizon,
+  ISO-NE/EIA API access via `gridstatus`, TimescaleDB reference architecture, provenance
+  pattern) remain current and were not re-litigated.

@@ -23,7 +23,7 @@ from owr.metrics import (
     severity_reduction,
     stress_window_effectiveness_fraction,
 )
-from owr.models import DayProfile, StorageAsset
+from owr.models import DayMode, DayProfile, DaySchedule, HourState, OperatingSchedule, StorageAsset
 from owr.simulator import simulate
 
 
@@ -179,18 +179,45 @@ def test_fuel_offset_fraction_negative_offset_gives_negative_fraction():
 # --------------------------------------------------------------------------- #
 
 
-def test_recharge_opportunity_mw_basic():
+def test_recharge_opportunity_mw_basic_on_dispatch_hours():
+    # Dispatch hours (ACTIVE_PEAK etc.) keep the old surplus formula.
     assert recharge_opportunity_mw(
         hourly_wind_mw=[100.0, 0.0, 50.0],
         hourly_load_mw=[80.0, 80.0, 10.0],
         hourly_discharge_mw=[0.0, 20.0, 0.0],
+        hourly_state=[HourState.ACTIVE_PEAK] * 3,
     ) == [20.0, 0.0, 40.0]
 
 
 def test_recharge_opportunity_mw_discharge_above_load_clamps_net_not_wind():
     assert recharge_opportunity_mw(
-        hourly_wind_mw=[30.0], hourly_load_mw=[10.0], hourly_discharge_mw=[20.0]
+        hourly_wind_mw=[30.0],
+        hourly_load_mw=[10.0],
+        hourly_discharge_mw=[20.0],
+        hourly_state=[HourState.ACTIVE_PEAK],
     ) == [30.0]
+
+
+def test_recharge_opportunity_mw_charges_from_wind_hours_ignore_load_and_discharge():
+    # D4: PRE_CHARGE and ACTIVE_OFF_PEAK hours report the full wind value,
+    # whatever load and discharge say.
+    assert recharge_opportunity_mw(
+        hourly_wind_mw=[100.0, 50.0],
+        hourly_load_mw=[80.0, 80.0],
+        hourly_discharge_mw=[0.0, 0.0],
+        hourly_state=[HourState.PRE_CHARGE, HourState.ACTIVE_OFF_PEAK],
+    ) == [100.0, 50.0]
+
+
+def test_recharge_opportunity_mw_non_event_hour_is_zero():
+    # D4: NON_EVENT hours report zero opportunity: all their wind goes to the
+    # grid by design, so there is no missed opportunity to report.
+    assert recharge_opportunity_mw(
+        hourly_wind_mw=[100.0],
+        hourly_load_mw=[10.0],
+        hourly_discharge_mw=[0.0],
+        hourly_state=[HourState.NON_EVENT],
+    ) == [0.0]
 
 
 @pytest.mark.parametrize("bad_index", [0, 1, 2])
@@ -199,7 +226,10 @@ def test_recharge_opportunity_mw_length_mismatch_raises(bad_index):
     series[bad_index] = series[bad_index][:-1]
     with pytest.raises(ValueError):
         recharge_opportunity_mw(
-            hourly_wind_mw=series[0], hourly_load_mw=series[1], hourly_discharge_mw=series[2]
+            hourly_wind_mw=series[0],
+            hourly_load_mw=series[1],
+            hourly_discharge_mw=series[2],
+            hourly_state=[HourState.ACTIVE_PEAK, HourState.ACTIVE_PEAK],
         )
 
 
@@ -210,7 +240,10 @@ def test_recharge_opportunity_mw_negative_element_raises(bad_index):
     series[bad_index][0] = -1.0
     with pytest.raises(ValueError):
         recharge_opportunity_mw(
-            hourly_wind_mw=series[0], hourly_load_mw=series[1], hourly_discharge_mw=series[2]
+            hourly_wind_mw=series[0],
+            hourly_load_mw=series[1],
+            hourly_discharge_mw=series[2],
+            hourly_state=[HourState.ACTIVE_PEAK, HourState.ACTIVE_PEAK],
         )
 
 
@@ -291,20 +324,31 @@ def _wind_and_load_day(i: int, wind_mw: float, load_mw: float) -> DayProfile:
     )
 
 
+def _pre_charge_schedule(days: list[DayProfile]) -> OperatingSchedule:
+    return OperatingSchedule(
+        days=tuple(
+            DaySchedule(date=d.date, mode=DayMode.PRE_CHARGE, peak_window=None, ramp_hours=0)
+            for d in days
+        )
+    )
+
+
 def test_recharge_opportunity_drift_guard_sanity_assertion_a():
     # Assertion A: sum(opportunity) >= sum(charge) always holds by construction,
     # because soc_engine.clamp_charge only ever reduces the requested charge.
     # Sanity check only; catches a sign error or a swapped argument, nothing more.
     asset = StorageAsset(total_mwh=20000.0, power_mw=2000.0)
     days = [_wind_and_load_day(0, wind_mw=1500.0, load_mw=8000.0)]
-    result = simulate(asset, days, starting_soc=asset.total_mwh)
+    schedule = _pre_charge_schedule(days)
+    result = simulate(asset, days, starting_soc=asset.total_mwh, schedule=schedule)
     opportunity: list[float] = []
-    for day, day_result in zip(days, result.daily, strict=True):
+    for day, day_schedule, day_result in zip(days, schedule.days, result.daily, strict=True):
         opportunity.extend(
             recharge_opportunity_mw(
                 hourly_wind_mw=list(day.hourly_wind_mw),
                 hourly_load_mw=[h.gross_load for h in day_result.hourly],
                 hourly_discharge_mw=[h.discharge for h in day_result.hourly],
+                hourly_state=list(day_schedule.hours),
             )
         )
     charge = [h.charge for d in result.daily for h in d.hourly]
@@ -313,8 +357,12 @@ def test_recharge_opportunity_drift_guard_sanity_assertion_a():
 
 def test_recharge_opportunity_matches_simulator_at_scale_where_no_clamp_binds():
     # Assertion B, the real drift guard: at a scale where no clamp binds,
-    # opportunity[h] must equal charge[h] for every hour. This fails the moment
-    # the simulator's recharge rule changes shape.
+    # opportunity[h] must equal charge[h] for every hour, on the hours that
+    # charge from wind (PRE_CHARGE / ACTIVE_OFF_PEAK). This fails the moment
+    # recharge.charge_request_mw's rule changes shape. Restricted to the
+    # charges-from-wind hours: opportunity and charge differ by design on
+    # dispatch hours, where opportunity keeps the old surplus formula and
+    # charge is always 0.0 (D4, D8).
     asset = StorageAsset(
         total_mwh=1_000_000.0,
         power_mw=1_000_000.0,
@@ -322,15 +370,18 @@ def test_recharge_opportunity_matches_simulator_at_scale_where_no_clamp_binds():
         strategic_reserve_frac=0.10,
     )
     days = [_wind_and_load_day(i, wind_mw=2000.0, load_mw=1000.0) for i in range(2)]
-    result = simulate(asset, days, starting_soc=asset.min_soc_mwh)
-    for day, day_result in zip(days, result.daily, strict=True):
+    schedule = _pre_charge_schedule(days)
+    result = simulate(asset, days, starting_soc=asset.min_soc_mwh, schedule=schedule)
+    for day, day_schedule, day_result in zip(days, schedule.days, result.daily, strict=True):
         opportunity = recharge_opportunity_mw(
             hourly_wind_mw=list(day.hourly_wind_mw),
             hourly_load_mw=[h.gross_load for h in day_result.hourly],
             hourly_discharge_mw=[h.discharge for h in day_result.hourly],
+            hourly_state=list(day_schedule.hours),
         )
-        for opp, hr in zip(opportunity, day_result.hourly, strict=True):
-            assert opp == pytest.approx(hr.charge)
+        for opp, hr, state in zip(opportunity, day_result.hourly, day_schedule.hours, strict=True):
+            if state.charges_from_wind:
+                assert opp == pytest.approx(hr.charge)
 
 
 # --------------------------------------------------------------------------- #

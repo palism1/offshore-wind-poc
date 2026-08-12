@@ -10,6 +10,7 @@ import pytest
 
 from owr.config import Config
 from owr.models import DayProfile, PowerRule, StorageAsset
+from owr.schedule import detect_and_build_schedule
 from owr.simulator import simulate
 from owr.sweep import SWEEP_FRAME_COLUMNS, SweepSpec, run_sweep
 
@@ -32,8 +33,17 @@ def _stress_day(i: int) -> DayProfile:
     load[17] = 10000.0
     load[18] = 12000.0
     load[19] = 10000.0
-    # 9000.0, raised from 500.0 (Week 4B change 7, R7): daily_budget's recharge
-    # term is surplus wind above load, and 500 MW leaves zero surplus here.
+    # 9000.0: enough wind for a real recharge opportunity on the off-peak
+    # hours a schedule-driven run sees. run_sweep always starts every size
+    # fully charged (asset.total_mwh). Before PLAN_BUDGET_FULL_TANK_FIX.md,
+    # the budget's recharge term came from recharge.charge_forward's
+    # SoC-clamped forecast, so a full tank forecast zero further recharge and
+    # severity_reduction on this fixture was 0.0 for that reason. Under the
+    # fix the recharge term is recharge.recharge_opportunity_mwh, which
+    # carries no SoC, so the same full start now produces a real,
+    # non-zero severity reduction; see test_sweep_severity_reduction_is_
+    # positive_at_the_full_start, below. The tests here still assert equality
+    # between direct and swept calls, whatever that value is.
     wind = [9000.0] * 24
     return DayProfile(
         date=date(2026, 1, 10) + timedelta(days=i),
@@ -170,10 +180,12 @@ def test_run_sweep_matches_direct_simulate_call_anti_fork_guard():
         soc_floor_frac=0.20,
         strategic_reserve_frac=0.10,
     )
+    schedule = detect_and_build_schedule(span, config=config)
     direct = simulate(
         asset,
         span,
         starting_soc=asset.total_mwh,
+        schedule=schedule,
         config=config,
         peak_weight=config.default_peak_weight,
         smooth_weight=config.default_smooth_weight,
@@ -199,6 +211,28 @@ def test_run_sweep_is_deterministic():
     a = run_sweep(spec, span_days=span).frame()
     b = run_sweep(spec, span_days=span).frame()
     pandas.testing.assert_frame_equal(a, b)
+
+
+def test_sweep_severity_reduction_is_positive_at_the_full_start():
+    # PLAN_BUDGET_FULL_TANK_FIX.md test 9: the test that proves the sweep
+    # deliverable is alive at its own default start. run_sweep starts every
+    # point fully charged, with no override; before the fix that floored
+    # every point's budget at 0.0 and killed sweep's core deliverable at
+    # every storage size. Measured: 0.015509, 0.031019, 0.062037, 0.124074 -
+    # non-decreasing as size rises.
+    spec = _spec(
+        sizes_mwh=(5000.0, 10000.0, 20000.0, 40000.0),
+        power_mw=2000.0,
+        soc_floor_frac=0.33,
+        strategic_reserve_frac=0.0,
+    )
+    result = run_sweep(spec, span_days=_span())
+    reductions = [p.severity_reduction for p in result.points]
+    for r in reductions:
+        assert r > 0
+    for earlier, later in zip(reductions, reductions[1:], strict=False):
+        assert later >= earlier - 1e-9
+    assert reductions == pytest.approx([0.015509, 0.031019, 0.062037, 0.124074], abs=1e-5)
 
 
 def test_frame_column_order_and_dtypes():

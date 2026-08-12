@@ -13,6 +13,7 @@ from datetime import timedelta
 
 import numpy as np
 
+from owr.config import Config
 from owr.models import (
     DailyLoadLike,
     DailyPercentileLike,
@@ -234,6 +235,24 @@ def find_stress_windows_at_percentile(
         )
 
     return _runs(stressed, days, min_window_days, make_window)
+
+
+def find_stress_windows_for_config(
+    days: Sequence[DailyPercentileLike], config: Config
+) -> list[StressWindow]:
+    """``find_stress_windows_at_percentile`` called with one ``Config``'s fields,
+    including D1's float guard (``round(x * 100.0, 9)``).
+
+    This is the exact call ``cli._run`` and ``api.create_run`` made before this
+    function existed, now centralized so no caller repeats the float-trap guard
+    or the argument list by hand.
+    """
+    return find_stress_windows_at_percentile(
+        days,
+        config.default_min_stress_window_days,
+        percentile_floor_percent=round(config.default_severity_percentile * 100.0, 9),
+        rounding=config.stress_percentile_rounding,
+    )
 
 
 def find_stress_windows(

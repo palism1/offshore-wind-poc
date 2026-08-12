@@ -3,7 +3,45 @@
 *Applied against the principles in Robert C. Martin's* Clean Code *(2008).  
 Each finding lists: **File** · **Issue** · **Rationale** · **Suggested improvement**.*
 
+**Status: Phase 6 improvements**
+
+Phase 6 introduced two new modules (`schedule.py`, `recharge.py`) and refactored existing modules to consolidate duplicated logic. The new modules follow the Clean Code principles: single responsibility, frozen immutable value objects, and focused pure functions.
+
 ---
+
+## Code Quality Improvements (Phase 6)
+
+### New modules exemplify Clean Code principles
+
+**`schedule.py`** – Single responsibility (event-relative hour classification)
+- Pure functions: `build_schedule()`, `detect_and_build_schedule()`
+- Immutable outputs: `OperatingSchedule`, `DaySchedule`, `DispatchWindow`
+- Cached properties on `DaySchedule`: `dispatch_window`, `hours` — derived once, never stored twice
+- No duplication: single source of truth for hour state classification
+
+**`recharge.py`** – Single responsibility (wind-to-storage routing rule)
+- Three focused functions: `charge_request_mw()`, `charge_forward()`, `recharge_opportunity_mwh()`
+- Pure functions, no I/O
+- Consolidated logic that was previously scattered across `simulator`, `initial_soc`, `metrics` (each with divergent implementations)
+
+### Duplication eliminated
+
+| Prior duplication | Consolidated in Phase 6 |
+|---|---|
+| Recharge forecast appeared in 3+ places with different clamp rules | `recharge.recharge_opportunity_mwh()` — single version |
+| Surplus-wind charging rule in `simulator` + `initial_soc` + `metrics` | `recharge.charge_request_mw(wind, hour_state)` + `HourState` enum from schedule |
+| Dispatch window computation implicit in dispatch logic | Explicit `DispatchWindow` value object built by schedule |
+| Hour classifications stored and re-derived separately | `DaySchedule.hours` (cached, never stored twice) |
+
+### Value objects follow frozen-dataclass pattern
+
+- `DayMode`, `HourState` — enums that prevent invalid state at construction
+- `DispatchWindow` — validates slots are consecutive, contain at least one in-day hour, etc.
+- `DaySchedule` — `__post_init__` validates mode-peak_window consistency
+
+---
+
+## Findings (pre-Phase 6, status noted)
 
 ## 1. Function Size
 
@@ -14,18 +52,18 @@ strong signal.
 
 ---
 
-**`simulator.py` → `simulate()`**
+**`simulator.py` → `simulate()` *(Refactored in Phase 6)*
 
 | Field | Detail |
 |---|---|
 | File | `src/owr/simulator.py` |
-| Issue | ~115 lines; performs input validation, per-day budget allocation, a nested hourly SoC loop, and daily record assembly — four distinct responsibilities. |
-| Rationale | Martin: *"The first rule of functions is that they should be small. The second rule of functions is that they should be smaller than that."* A reader must mentally context-switch between orchestration logic and SoC arithmetic in the same function body. |
-| Suggested improvement | Extract the inner hourly loop into `_simulate_day(day, budget, asset, config, …) → DailyResult`. Keep `simulate()` as a thin orchestrator that iterates days and accumulates results. |
+| Previous issue | ~115 lines; performed input validation, per-day budget allocation, nested hourly SoC loop, and daily record assembly |
+| Phase 6 change | Now ~130 lines but with clearer structure: schedule validation, per-day loop with explicit day mode check (ACTIVE_EVENT only gets budget), then dispatch. The inner hour loop is smaller and focused on SoC arithmetic (`charge_request_mw` + `clamp_charge` vs. inline surplus calculation). |
+| Status | Improved but still on the borderline. The core loop is now clearer (recharge decision is delegated to `recharge.charge_request_mw`), but the function could still benefit from extracting a `_simulate_day()` helper. |
 
 ---
 
-**`cli.py` → `_build_report()`**
+**`cli.py` → `_build_report()` *(Not refactored)*
 
 | Field | Detail |
 |---|---|
@@ -36,7 +74,7 @@ strong signal.
 
 ---
 
-**`cli.py` → `_run()`**
+**`cli.py` → `_run()` *(Not refactored)*
 
 | Field | Detail |
 |---|---|
@@ -47,18 +85,18 @@ strong signal.
 
 ---
 
-**`simulator.py` → `SimulationResult.hourly_frame()`**
+**`simulator.py` → `SimulationResult.hourly_frame()` *(Fixed in Phase 6)*
 
 | Field | Detail |
 |---|---|
 | File | `src/owr/simulator.py` |
-| Issue | ~70 lines; declares 10 identically-typed empty lists, appends to all 10 inside a single loop, then constructs a DataFrame by repeating those same 10 names as column labels. |
-| Rationale | The parallel-list pattern distributes one logical operation (flatten hourly records to a tabular form) across 30+ lines of boilerplate that can diverge when fields are added. The column list and the append list must be kept in sync by hand. |
-| Suggested improvement | Replace with a list-of-dicts comprehension — `rows = [vars(h) for d in self.daily for h in d.hourly]` — then `pd.DataFrame(rows)`. The structure of each row mirrors the structure of `HourlyResult`, making additions self-maintaining. |
+| Previous issue | ~70 lines; declared 10 empty lists, appended to all in a loop, then constructed DataFrame by repeating the same 10 names |
+| Phase 6 change | **Refactored**: now uses `rows = [vars(h) for d in self.daily for h in d.hourly]; pd.DataFrame(rows)` — 3 lines, self-maintaining when fields are added. |
+| Status | ✓ **Resolved** |
 
 ---
 
-**`scenario_input.py` → `read_day_profiles()`**
+**`scenario_input.py` → `read_day_profiles()` *(Not refactored)*
 
 | Field | Detail |
 |---|---|
@@ -75,18 +113,19 @@ Martin's rule: *the ideal number of arguments for a function is zero. … More t
 
 ---
 
-**`simulator.py` → `simulate()` — 7 parameters**
+**`simulator.py` → `simulate()` *(Added 1 new required parameter in Phase 6)*
 
 | Field | Detail |
 |---|---|
 | File | `src/owr/simulator.py` |
-| Issue | `asset`, `window_days`, `starting_soc`, `available_capacity_mw`, `config`, `peak_weight`, `smooth_weight` — seven parameters. |
-| Rationale | The two weight parameters (`peak_weight`, `smooth_weight`) always travel together and represent a single concept: the blending strategy for discharge. Passing them as separate floats forces every call site to unpack and re-pass both. |
-| Suggested improvement | Introduce a `DispatchWeights(peak: float, smooth: float)` dataclass (or reuse an existing named tuple). Reduce the signature to five parameters; consider whether `config` could carry the weights, reducing it further to four. |
+| Previous signature | 7 parameters: `asset`, `window_days`, `starting_soc`, `available_capacity_mw`, `config`, `peak_weight`, `smooth_weight` |
+| Phase 6 change | Now 7 parameters + 1 required keyword-only: adds `schedule: OperatingSchedule` (required, no default). Removes internal schedule detection fallback (the caller must build it). |
+| Rationale | Phase 6 made the schedule explicit: it is a separate immutable execution plan built before the loop and passed to every consumer. This ensures all consumers (simulator, dispatch, metrics, recharge) see the same schedule and no consumer re-derives it. |
+| Improvement opportunity | The two weight parameters (`peak_weight`, `smooth_weight`) still travel as separate floats. Could introduce `DispatchWeights` dataclass to reduce to 6 parameters + 1 required. |
 
 ---
 
-**`cli.py` → `_build_report()` — 13 keyword-only parameters**
+**`cli.py` → `_build_report()` *(Not refactored)*
 
 | Field | Detail |
 |---|---|

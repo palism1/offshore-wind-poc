@@ -57,6 +57,10 @@ def test_daily_budget_zero_when_no_usable_energy():
 
 
 def test_daily_budget_is_zero_when_recharge_is_zero():
+    # expected_recharge_mwh == 0.0 here means no recharge opportunity in the
+    # horizon (PLAN_BUDGET_FULL_TANK_FIX.md), never no headroom: this
+    # function takes the value its caller passes and applies no headroom
+    # clamp of its own.
     assert daily_budget(
         available_charge_mwh=1000.0,
         remaining_stress_days=1,

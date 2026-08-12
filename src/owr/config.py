@@ -1,7 +1,7 @@
 """Engine configuration — the design constants the source documents leave open.
 
 Every value here is a **team design choice**, not a verified fact (see
-docs/archive/reviews/FACT_CHECK_REPORT.md "Common Mistakes": the 0.7/0.3 weights, 80% budget and
+docs/archive/reviews/FACT_CHECK_REPORT.md "Common Mistakes": the 0.7/0.3 weights and the
 33% floor are decisions to benchmark against literature and label, never facts to
 verify). They are surfaced as configuration so a scenario can override them and so
 the open questions in docs/PLAN.md never get hard-coded as magic numbers.
@@ -33,12 +33,6 @@ class Config:
     priority_demand_weight / priority_wind_weight
         Architecture doc: ``Priority(d) = 0.7*DemandPercentile + 0.3*WindForecast``.
         Weights must sum to 1.0. (Team design choice.)
-
-    energy_budget_fraction
-        The "80% energy budget rule": at most this fraction of the currently usable
-        energy may be committed as a single day's discharge budget, leaving a margin
-        for forecast error. (Team design choice; FACT_CHECK inconsistency around the
-        blank Step 5/6 sections means the exact allocation is not fully specified.)
 
     default_efficiency
         Round-trip efficiency, measured at the terminals, in
@@ -116,6 +110,22 @@ class Config:
         the choice changes which hours get shaved at the day boundary. Flipping
         the default is a one-value change.
 
+        The default is now ``STOP_AT_MIDNIGHT``, per requirements Section 9 of
+        ``docs/architecture/event_relative_recharge.md``, so a dispatch block
+        never crosses midnight. The open question stays open. Consequence for a
+        future flipper: under ``WRAP_TO_NEXT_DAY`` a day whose highest triplet
+        wraps gets peak slots such as (22, 23, 24); slot 24 does not exist in
+        the day, so that share of the peak pool is not delivered and is not
+        moved to another hour (D14, R7).
+
+    default_ramp_hours
+        The ramp-up and ramp-down block length in hours on each side of the
+        peak window, used by ``schedule.build_schedule`` and
+        ``dispatch.allocate_discharge``. OPEN team question (``ramp_duration``):
+        no source names a value. ``[TWEAK]`` 1 hour is the smallest value that
+        makes the ramp-up -> peak -> ramp-down sandwich real, and it gives a
+        5-hour dispatch block at the settled 3-hour peak window.
+
     est_transmission_cost_per_mile_usd / est_storage_unit_cost_usd / solution_lifetime_years
         OPEN team question (capital_cost_constants). Component 7's capital-cost
         formulas need these three constants and every one is ``@`` in the source:
@@ -181,7 +191,6 @@ class Config:
 
     priority_demand_weight: float = 0.7
     priority_wind_weight: float = 0.3
-    energy_budget_fraction: float = 0.80
     default_efficiency: float = 0.7225
     default_soc_floor_frac: float = 0.20
     default_strategic_reserve_frac: float = 0.10
@@ -190,7 +199,8 @@ class Config:
     default_peak_weight: float = 0.5
     default_smooth_weight: float = 0.5
     default_peak_window_hours: int = 3
-    default_peak_window_wrap: WrapConvention = WrapConvention.WRAP_TO_NEXT_DAY
+    default_peak_window_wrap: WrapConvention = WrapConvention.STOP_AT_MIDNIGHT
+    default_ramp_hours: int = 1
     est_transmission_cost_per_mile_usd: float | None = None
     est_storage_unit_cost_usd: float | None = None
     solution_lifetime_years: float | None = None
@@ -215,8 +225,6 @@ class Config:
     def __post_init__(self) -> None:
         if abs((self.priority_demand_weight + self.priority_wind_weight) - 1.0) > 1e-9:
             raise ValueError("priority weights must sum to 1.0")
-        if not 0.0 < self.energy_budget_fraction <= 1.0:
-            raise ValueError("energy_budget_fraction must be in (0, 1]")
         if not 0.0 < self.default_efficiency <= 1.0:
             raise ValueError("efficiency must be in (0, 1]")
         floor = self.default_soc_floor_frac + self.default_strategic_reserve_frac
@@ -232,6 +240,8 @@ class Config:
             raise ValueError("default_peak_weight + default_smooth_weight must be > 0")
         if not 1 <= self.default_peak_window_hours <= HOURS_PER_DAY:
             raise ValueError(f"default_peak_window_hours must be in 1..{HOURS_PER_DAY}")
+        if not 0 <= self.default_ramp_hours <= HOURS_PER_DAY:
+            raise ValueError(f"default_ramp_hours must be in 0..{HOURS_PER_DAY}")
         if self.est_transmission_cost_per_mile_usd is not None and (
             self.est_transmission_cost_per_mile_usd < 0
         ):

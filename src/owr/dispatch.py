@@ -1,36 +1,32 @@
 """Intra-day discharge allocation (Architecture Step 5 / dispatch module).
 
-Split a day's discharge budget across its 24 hours between two objectives:
+Split a day's discharge budget across a planned ramp-up -> peak -> ramp-down
+block (``DispatchWindow``) between two objectives:
 
-  * peak reduction  — shave the hours whose load is highest (Discharge_peak)
-  * ramp smoothing  — cut the steepest hour-to-hour increases (Discharge_smooth)
+  * peak reduction  — the peak-window hours (Discharge_peak)
+  * ramp smoothing  — the ramp-up and ramp-down hours (Discharge_smooth)
 
-subject to the hard constraint ``sum_t Discharge(t) <= Budget(d)`` and the per-hour
-power limit. The relative emphasis is set by peak_weight / smooth_weight (a team
-design choice; the doc names PeakWeight and SmoothWeight without fixed values).
+subject to the hard constraint ``sum_t Discharge(t) <= Budget(d)`` and the
+per-hour power limit.
+
+D7: the load-derived shape (mean-relative peak signal, hour-to-hour ramp
+signal) is gone. The peak-window search already used the load to pick the
+block; re-shaping inside the block by load cannot be made truncation-invariant
+without a caller-visible squeeze (requirements Section 11's second bullet).
+The allocation is now purely positional: divisors are the *planned* peak and
+ramp slot counts, counted before truncation, so an hour's share depends only
+on the budget, the two weights and the planned slot counts — never on which
+slots survived the day boundary (Section 8c, the no-squeeze guarantee).
 """
 
 from __future__ import annotations
 
-from owr.models import HOURS_PER_DAY
-
-
-def _peak_signal(load: list[float]) -> list[float]:
-    """How far each hour rises above the day's mean load (0 if at/below mean)."""
-    mean = sum(load) / len(load)
-    return [max(0.0, x - mean) for x in load]
-
-
-def _ramp_signal(load: list[float]) -> list[float]:
-    """Positive hour-to-hour increase into each hour (the ramp we want to smooth)."""
-    signal = [0.0] * len(load)
-    for t in range(1, len(load)):
-        signal[t] = max(0.0, load[t] - load[t - 1])
-    return signal
+from owr.models import HOURS_PER_DAY, DispatchWindow
 
 
 def allocate_discharge(
-    hourly_load_mw: list[float],
+    *,
+    dispatch_window: DispatchWindow | None,
     budget_mwh: float,
     power_mw: float,
     peak_weight: float = 0.5,
@@ -39,32 +35,44 @@ def allocate_discharge(
     """Return (discharge_total, discharge_peak, discharge_smooth), each length 24.
 
     Guarantees: every hour in [0, power_mw]; sum(discharge_total) <= budget_mwh
-    (within floating-point tolerance).
+    (within floating-point tolerance). No dispatch window, or a non-positive
+    budget or power, returns three zero lists.
     """
-    if len(hourly_load_mw) != HOURS_PER_DAY:
-        raise ValueError(f"hourly_load_mw must have {HOURS_PER_DAY} values")
-    if budget_mwh <= 0 or power_mw <= 0:
-        zeros = [0.0] * HOURS_PER_DAY
-        return zeros, list(zeros), list(zeros)
+    zeros = [0.0] * HOURS_PER_DAY
+    if dispatch_window is None or budget_mwh <= 0 or power_mw <= 0:
+        return list(zeros), list(zeros), list(zeros)
 
-    peak = _peak_signal(hourly_load_mw)
-    ramp = _ramp_signal(hourly_load_mw)
-    peak_sum = sum(peak)
-    ramp_sum = sum(ramp)
-
-    # Each signal is divided by its own sum so the two carry equal total weight.
-    # Without that step the signal with the larger raw magnitude would claim most of
-    # the budget, whatever peak_weight and smooth_weight say.
-    peak_shape = [p / peak_sum if peak_sum > 0 else 0.0 for p in peak]
-    ramp_shape = [r / ramp_sum if ramp_sum > 0 else 0.0 for r in ramp]
     total_weight = peak_weight + smooth_weight
     peak_weight_norm = peak_weight / total_weight if total_weight > 0 else 0.5
     smooth_weight_norm = smooth_weight / total_weight if total_weight > 0 else 0.5
 
-    # Provisional per-hour split: the power-cap clip below can scale any hour of it
-    # down, so these are targets, not the values this function returns.
-    d_peak = [budget_mwh * peak_weight_norm * s for s in peak_shape]
-    d_smooth = [budget_mwh * smooth_weight_norm * s for s in ramp_shape]
+    planned_peak = len(dispatch_window.peak_slots)
+    planned_ramp = 2 * dispatch_window.ramp_hours
+
+    # Section 8a: fold on the CONFIGURED ramp count (dispatch_window.ramp_hours),
+    # never on how many ramp slots survive truncation. A configuration with no
+    # ramp block is a design choice; an out-of-day ramp slot is an event
+    # boundary, and the two must not be treated alike (see the module docstring
+    # of models.DispatchWindow and revision-log finding 6 of the plan).
+    if planned_ramp == 0:
+        peak_pool = budget_mwh
+        ramp_pool = 0.0
+    else:
+        peak_pool = budget_mwh * peak_weight_norm
+        ramp_pool = budget_mwh * smooth_weight_norm
+
+    per_peak_slot = peak_pool / planned_peak if planned_peak > 0 else 0.0
+    per_ramp_slot = ramp_pool / planned_ramp if planned_ramp > 0 else 0.0
+
+    d_peak = [0.0] * HOURS_PER_DAY
+    d_smooth = [0.0] * HOURS_PER_DAY
+    for h in dispatch_window.peak_hours:
+        d_peak[h] = per_peak_slot
+    for h in dispatch_window.ramp_up_hours:
+        d_smooth[h] = per_ramp_slot
+    for h in dispatch_window.ramp_down_hours:
+        d_smooth[h] = per_ramp_slot
+
     total = [p + s for p, s in zip(d_peak, d_smooth, strict=True)]
 
     # Enforce the per-hour power cap; redistribute the spilled energy proportionally

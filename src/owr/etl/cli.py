@@ -458,8 +458,10 @@ def _demo_profile_banner(
             "      hold. No proxy is emitted, so Priority(d) runs on the demand term alone",
             "      [OPEN: wind_forecast_frac_derivation].",
             "NOTE  wind is about 5% of ISO-NE system load in this window, 45 to 1,675 MW against",
-            "      14,341 to 20,127 MW. simulate's surplus-wind recharge is therefore 0.0 MWh in",
-            "      every hour. Pre-event charging through --lead-days does use these values.",
+            "      14,341 to 20,127 MW. Event-relative recharge (docs/architecture/",
+            "      event_relative_recharge.md) charges the full wind value on pre-charge and",
+            "      off-peak hours, not just wind above load, so these values do drive real",
+            "      charging on that hour class; dispatch hours never charge regardless.",
         ]
     else:
         lines += [

@@ -40,7 +40,7 @@ the primary-source verification of every claim.
 git clone https://github.com/palism1/offshore-wind-poc.git
 cd offshore-wind-poc
 uv sync --extra etl --extra api --extra viz   # env + all optional features
-uv run pytest                                 # expect: 622 passed, 4 skipped
+uv run pytest                                 # expect: 832 passed, 4 skipped
 uv run ruff check .                           # expect: All checks passed
 ```
 
@@ -56,13 +56,15 @@ uv run simulate --input examples/real_winter_stress_2026.csv \
 ```
 
 Expected result: the pre-event charging block reports state of charge 20,000 MWh
-to 20,000 MWh, no gain. ISO-NE system-wide wind almost never exceeds system load
-in this window, so pre-event charging (`initial_soc.charge_from_wind`) finds no
-surplus to charge from at any starting SoC; the engine reports this as the open
-question `wind_charge_source` rather than assuming a dedicated wind farm whose
-output would go to the reserve first. Drop `--start-soc-mwh 20000` to start the
-reserve fully charged (60,000 MWh) and see a non-trivial severity reduction
-instead.
+to 40,128 MWh, a real gain. Under event-relative recharge, pre-charge hours
+route all their wind to storage rather than only the surplus above load
+(`initial_soc.charge_from_wind`), so the reserve fills from real headroom at
+any starting SoC; the engine still cannot tell an ISO-NE system-wide wind
+series (which serves load) from a dedicated offshore farm whose output would
+go to the reserve first, and reports that as the open question
+`wind_charge_source`. Drop `--start-soc-mwh 20000` to start the reserve fully
+charged (60,000 MWh) and see the severity reduction a full start now delivers
+by itself.
 
 Sweep severity reduction across a ladder of storage sizes and render a chart:
 
@@ -132,7 +134,7 @@ The dev group (pytest, ruff, fastapi test client) installs by default with
 `uv sync`, so the full test suite runs with no extras at all.
 
 Model constants that the source documents leave open (reserve floor, priority
-weights 0.7/0.3, 80% energy-budget rule, round-trip efficiency) are named,
+weights 0.7/0.3, round-trip efficiency) are named,
 documented values in `src/owr/config.py`, never magic numbers. Each docstring
 names the team question it maps to. Override them per run through the CLI flags
 (`uv run simulate --help` lists every one with its labeled default). Efficiency
